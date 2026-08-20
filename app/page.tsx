@@ -46,10 +46,29 @@ function FeatureView({ active, notify }: { active: string; notify: (message: str
 }
 
 export default function Home() {
+  const [loggedIn, setLoggedIn] = useState(false);
   const [active, setActive] = useState("Visão geral");
   const [recording, setRecording] = useState(false);
   const [toast, setToast] = useState("");
   function notify(message: string) { setToast(message); window.setTimeout(() => setToast(""), 2600); }
+  if (!loggedIn) return (
+    <main className="cover-page">
+      <section className="cover-brand-panel">
+        <div className="cover-institution"><div className="ifsc-plate"><img src="/ifsc-logo.png" alt="Instituto Federal de Santa Catarina, Câmpus Florianópolis-Continente" /></div><p>CÂMPUS FLORIANÓPOLIS-CONTINENTE</p></div>
+        <div className="cover-message"><p className="cover-kicker">INTELIGÊNCIA PARA REUNIÕES</p><h1>Conversas mais<br/>produtivas.</h1><h2>Decisões mais<br/>claras.</h2><p className="cover-copy">Gravações, atas, decisões e próximos passos reunidos em um ambiente inteligente e seguro.</p></div>
+        <div className="cover-maker"><small>DESENVOLVIDO PELO</small><div><img src="/inovalab-mark.png" alt=""/><strong>INOVALAB</strong></div><p>Laboratório de Inovação e Mídias Digitais</p></div>
+      </section>
+      <section className="cover-access-panel">
+        <div className="access-wrap">
+          <div className="cover-app-mark"><img src="/inovalab-mark.png" alt=""/></div><p className="access-kicker">KEYNOTESAI</p><h2>Acesse sua conta</h2><p className="access-subtitle">Entre com sua identidade institucional para continuar.</p>
+          <button className="login-button" onClick={()=>setLoggedIn(true)}><span className="login-symbol">○</span><strong>Entrar no KeyNotesAI</strong><span>→</span></button><p className="secure-note">◇ Acesso restrito a usuários autorizados.</p>
+          <div className="access-divider"/><h3>O que você encontrará</h3>
+          <div className="access-benefits"><div><span>IA</span><p><strong>Reuniões inteligentes</strong><small>Gravação, transcrição e resumos</small></p></div><div><span>AM</span><p><strong>Ações e decisões</strong><small>Responsáveis, prazos e bloqueios claros</small></p></div><div><span>TR</span><p><strong>Integração com Trello</strong><small>Cada reunião organizada em um card</small></p></div></div>
+        </div>
+        <p className="access-help">Problemas para acessar? Procure a administração do sistema.</p>
+      </section>
+    </main>
+  );
   return (
     <main className="app-shell">
       <aside className="sidebar">
