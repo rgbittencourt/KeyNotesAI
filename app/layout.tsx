@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: "KeyNotesAI — Inteligência para suas reuniões",
   description: "Você foca na reunião, a IA cuida do resto.",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/inovalab-mark.png", apple: "/inovalab-mark.png" },
+  icons: { icon: "/favicon.png", shortcut: "/favicon.png", apple: "/keynotesai-logo.png" },
   openGraph: { title: "KeyNotesAI", description: "Você foca na reunião, a IA cuida do resto.", images: ["/og.png"] },
   twitter: { card: "summary_large_image", title: "KeyNotesAI", description: "Você foca na reunião, a IA cuida do resto.", images: ["/og.png"] },
 };

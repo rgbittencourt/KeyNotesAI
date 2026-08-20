@@ -60,7 +60,7 @@ export default function Home() {
       </section>
       <section className="cover-access-panel">
         <div className="access-wrap">
-          <div className="cover-app-mark"><img src="/inovalab-mark.png" alt=""/></div><p className="access-kicker">KEYNOTESAI</p><h2>Acesse sua conta</h2><p className="access-subtitle">Entre com sua identidade institucional para continuar.</p>
+          <div className="cover-app-mark"><img src="/keynotesai-logo.png" alt="Símbolo do KeyNotesAI"/></div><p className="access-kicker">KEYNOTESAI</p><h2>Acesse sua conta</h2><p className="access-subtitle">Entre com sua identidade institucional para continuar.</p>
           <button className="login-button" onClick={()=>setLoggedIn(true)}><span className="login-symbol">○</span><strong>Entrar no KeyNotesAI</strong><span>→</span></button><p className="secure-note">◇ Acesso restrito a usuários autorizados.</p>
           <div className="access-divider"/><h3>O que você encontrará</h3>
           <div className="access-benefits"><div><span>IA</span><p><strong>Reuniões inteligentes</strong><small>Gravação, transcrição e resumos</small></p></div><div><span>AM</span><p><strong>Ações e decisões</strong><small>Responsáveis, prazos e bloqueios claros</small></p></div><div><span>TR</span><p><strong>Integração com Trello</strong><small>Cada reunião organizada em um card</small></p></div></div>
@@ -72,14 +72,14 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><img src="/inovalab-mark.png" alt="" /><div><strong>KeyNotes<span>AI</span></strong><small>Meeting intelligence</small></div></div>
+        <div className="brand"><img src="/keynotesai-logo.png" alt="" /><div><strong>KeyNotes<span>AI</span></strong><small>Meeting intelligence</small></div></div>
         <nav aria-label="Navegação principal">
           {[['◈','Visão geral'],['▷','Reuniões'],['✓','Ações'],['⊙','Decisões'],['⌕','Pergunte à IA']].map(([icon, label]) => <button key={label} className={active === label ? "active" : ""} onClick={() => { setActive(label); notify(`${label} selecionado`); }}><span>{icon}</span>{label}</button>)}
         </nav>
         <div className="sidebar-bottom"><p>INTEGRAÇÕES</p><button onClick={() => notify("Configuração do Trello aberta")}><span className="trello-mini">T</span><span>Trello<small>Conectado</small></span><i>•••</i></button><div className="user"><span>RB</span><div><strong>Rogério Bittencourt</strong><small>Administrador</small></div></div></div>
       </aside>
       <section className="workspace">
-        <header><button className="mobile-brand" aria-label="Abrir menu"><img src="/inovalab-mark.png" alt="" /></button><div className="search"><span>⌕</span><input aria-label="Buscar" placeholder="Buscar reuniões, decisões ou tarefas..." /><kbd>Ctrl K</kbd></div><div className="header-actions"><button aria-label="Ajuda">?</button><button aria-label="Notificações">○<i /></button><span className="avatar">RB</span></div></header>
+        <header><button className="mobile-brand" aria-label="Abrir menu"><img src="/keynotesai-logo.png" alt="" /></button><div className="search"><span>⌕</span><input aria-label="Buscar" placeholder="Buscar reuniões, decisões ou tarefas..." /><kbd>Ctrl K</kbd></div><div className="header-actions"><button aria-label="Ajuda">?</button><button aria-label="Notificações">○<i /></button><span className="avatar">RB</span></div></header>
         <div className="content">
           {active !== "Visão geral" ? <FeatureView active={active} notify={notify} /> : <><section className="welcome"><div><p className="eyebrow">QUINTA-FEIRA, 20 DE AGOSTO</p><h1>Bom dia, Rogério.</h1><p>Você foca na reunião, a IA cuida do resto.</p></div><button className={`record ${recording ? "recording" : ""}`} onClick={() => { setRecording(!recording); notify(recording ? "Gravação pausada" : "Gravação iniciada"); }}><i />{recording ? "Pausar gravação" : "Gravar nova reunião"}</button></section>
           <section className="hero-grid">
