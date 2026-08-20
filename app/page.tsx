@@ -54,7 +54,7 @@ export default function Home() {
   if (!loggedIn) return (
     <main className="cover-page">
       <section className="cover-brand-panel">
-        <div className="cover-institution"><div className="ifsc-plate"><img src="/ifsc-logo.png" alt="Instituto Federal de Santa Catarina, Câmpus Florianópolis-Continente" /></div><p>CÂMPUS FLORIANÓPOLIS-CONTINENTE</p></div>
+        <div className="cover-institution"><div className="ifsc-plate"><img src="/ifsc-continente-branco.png" alt="Instituto Federal de Santa Catarina, Câmpus Florianópolis-Continente" /></div></div>
         <div className="cover-message"><p className="cover-kicker">INTELIGÊNCIA PARA REUNIÕES</p><h1>Conversas mais<br/>produtivas.</h1><h2>Decisões mais<br/>claras.</h2><p className="cover-copy">Gravações, atas, decisões e próximos passos reunidos em um ambiente inteligente e seguro.</p></div>
         <div className="cover-maker"><small>DESENVOLVIDO PELO</small><div><img src="/inovalab-mark.png" alt=""/><strong>INOVALAB</strong></div><p>Laboratório de Inovação e Mídias Digitais</p></div>
       </section>
