@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {processTranscript,type MeetingAction,type MeetingDecision} from "./local-processing";
 import RealFeatureView from "./real-feature-view";
 
-export type DeviceRecording = { id: number; name: string; createdAt: string; duration: string; size: string; url: string; transcript?:string; summary?:string; minutes?:string; actions?:MeetingAction[]; decisions?:MeetingDecision[]; processedAt?:string };
+export type DeviceRecording = { id: number; name: string; createdAt: string; duration: string; size: string; url: string; meetingDate?:string; meetingTime?:string; participants?:string; department?:string; agenda?:string; transcript?:string; summary?:string; minutes?:string; actions?:MeetingAction[]; decisions?:MeetingDecision[]; processedAt?:string };
 type ScheduledMeeting = { id: number; title: string; date: string; time: string };
 
 function openRecordingsDb(): Promise<IDBDatabase> { return new Promise((resolve,reject)=>{ const req=indexedDB.open("keynotesai-local",1); req.onupgradeneeded=()=>req.result.createObjectStore("recordings",{keyPath:"id"}); req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error); }); }
