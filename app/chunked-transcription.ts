@@ -1,3 +1,5 @@
+import TranscriptionWorker from "./transcription.worker?worker";
+
 type Progress=(message:string,percent:number)=>void;
 
 async function findFrame(blob:Blob,approx:number){
@@ -20,7 +22,7 @@ async function decode(chunk:Blob){
 function transcribeChunk(worker:Worker,audio:Float32Array,onProgress:Progress,chunk:number,total:number){return new Promise<string>((resolve,reject)=>{worker.onmessage=e=>{const m=e.data;if(m.type==="progress")onProgress("Baixando o modelo Whisper local…",Math.min(35,Math.round((m.progress||0)*35)));if(m.type==="status"&&m.message.includes("Transcrevendo"))onProgress(`Transcrevendo parte ${chunk} de ${total}…`,35+Math.round(((chunk-1)/total)*65));if(m.type==="complete")resolve((m.text||"").trim());if(m.type==="error")reject(new Error(m.message));};worker.postMessage({audio},[audio.buffer]);});}
 
 export async function transcribeAudioInChunks(blob:Blob,onProgress:Progress){
- const chunks=await splitAudio(blob),worker=new Worker(new URL("./transcription.worker.ts",import.meta.url),{type:"module"}),texts:string[]=[];
+ const chunks=await splitAudio(blob),worker=new TranscriptionWorker(),texts:string[]=[];
  try{for(let i=0;i<chunks.length;i++){onProgress(`Preparando parte ${i+1} de ${chunks.length}…`,Math.round((i/chunks.length)*25));const audio=await decode(chunks[i]);texts.push(await transcribeChunk(worker,audio,onProgress,i+1,chunks.length));onProgress(`Parte ${i+1} de ${chunks.length} concluída`,Math.round(((i+1)/chunks.length)*100));}return texts.filter(Boolean).join("\n\n");}
  finally{worker.terminate();}
 }
