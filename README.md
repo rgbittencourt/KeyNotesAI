@@ -42,6 +42,40 @@ precisam ser cadastrados pelo painel Administração. Cada transcrição pela AP
 ou geração de documentos consome uma operação da cota mensal configurada pelo
 administrador.
 
+## Google Drive institucional
+
+O arquivamento usa como raiz a pasta `Reuniões - KeyNotesAI` da conta
+`inovalab.cte@gmail.com` (`15eNIgl3Zxu9j-eKCz8HS01a3KgXOvMIC`). Para cada
+reunião processada, o aplicativo cria uma subpasta no formato
+`aaaa-mm-dd : hh:mm - Título da Reunião` e envia a gravação, transcrição, ata, resumo
+executivo, plano de ação e registro de decisões. Os links retornados pelo Drive
+ficam associados à reunião e serão usados posteriormente na integração Trello.
+
+O acesso usa OAuth da própria conta `inovalab.cte@gmail.com`, configurado com
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_TOKEN_ENCRYPTION_KEY`. O
+refresh token retornado pelo Google é criptografado antes de ser persistido no
+D1. O URI de redirecionamento autorizado é
+`https://keynotes-ai.rogerio-bittencourt.chatgpt.site/api/google-drive/callback`.
+
+## Ideias preservadas para evolução
+
+### Autenticação híbrida sem obrigatoriedade de ChatGPT
+
+Manter o Sign in with ChatGPT enquanto o projeto estiver em validação. Caso a
+adoção cresça, substituir o acesso obrigatório por um fluxo híbrido:
+
+- o e-mail cadastrado pelo administrador continua sendo a identidade autorizada;
+- no primeiro acesso, o usuário confirma esse e-mail com um código temporário;
+- depois da confirmação, pode vincular opcionalmente uma conta ChatGPT, mesmo
+  que ela utilize outro e-mail pessoal;
+- usuários com vínculo entram diretamente pelo ChatGPT;
+- usuários sem conta ChatGPT continuam entrando por código enviado por e-mail;
+- bloqueios, exclusões e cotas permanecem sob controle do administrador.
+
+A vinculação deve ser feita somente depois da comprovação do e-mail autorizado.
+Não tentar consultar se um endereço possui conta ChatGPT, pois não existe uma
+consulta pública apropriada para descoberta de contas.
+
 This starter does not use `wrangler.jsonc`.
 
 ## Included Shape

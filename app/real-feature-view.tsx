@@ -48,6 +48,8 @@ export default function RealFeatureView(p: Props) {
     [lastQuestion, setLastQuestion] = useState(""),
     [transcribing, setTranscribing] = useState(false),
     [analyzing, setAnalyzing] = useState(false),
+    [archivingDrive, setArchivingDrive] = useState(false),
+    [driveStatus, setDriveStatus] = useState(""),
     [analysisIssue, setAnalysisIssue] = useState(""),
     [transcriptionStatus, setTranscriptionStatus] = useState(""),
     [transcriptionProgress, setTranscriptionProgress] = useState(0),
@@ -196,6 +198,30 @@ export default function RealFeatureView(p: Props) {
       p.notify("Falha na transcrição pela OpenAI");
     } finally {
       setTranscribing(false);
+    }
+  }
+  async function archiveInDrive() {
+    if (!selected || archivingDrive) return;
+    setArchivingDrive(true);
+    setDriveStatus("Preparando arquivos e gravação…");
+    try {
+      const audio = await fetch(selected.url).then((response) => response.blob());
+      const form = new FormData();
+      form.set("meeting", JSON.stringify(selected));
+      form.set("audio", audio, `${selected.name}.webm`);
+      setDriveStatus("Criando a pasta e enviando os arquivos…");
+      const response = await fetch("/api/drive/archive-meeting", { method: "POST", body: form });
+      const body = await response.json() as { error?: string; folder?: { webViewLink: string }; files?: Array<{ id: string; name: string; webViewLink: string }>; createdAt?: string };
+      if (!response.ok || !body.folder) throw new Error(body.error || "Não foi possível arquivar no Drive.");
+      await p.updateRecording(selected.id, { driveFolderUrl: body.folder.webViewLink, driveFiles: body.files || [], driveSyncedAt: body.createdAt || new Date().toISOString() });
+      setDriveStatus("Reunião arquivada no Google Drive");
+      p.notify("Reunião e documentos salvos no Drive");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao salvar no Google Drive";
+      setDriveStatus(message);
+      p.notify("Falha ao arquivar no Google Drive");
+    } finally {
+      setArchivingDrive(false);
     }
   }
   function ask() {
@@ -451,6 +477,7 @@ export default function RealFeatureView(p: Props) {
                   </button>
                 </div>
                 {selected.processedAt && (
+                  <>
                   <div className="generated-docs">
                     <Doc
                       title="Ata da reunião"
@@ -475,6 +502,23 @@ export default function RealFeatureView(p: Props) {
                       }
                     />
                   </div>
+                  <div className="drive-archive">
+                    <div>
+                      <strong>Arquivo institucional no Google Drive</strong>
+                      <small>Cria uma subpasta com a gravação e todos os documentos desta reunião.</small>
+                    </div>
+                    <button onClick={archiveInDrive} disabled={archivingDrive}>
+                      {archivingDrive ? "Enviando ao Drive…" : selected.driveFolderUrl ? "Atualizar no Drive" : "Arquivar no Drive"}
+                    </button>
+                    {driveStatus && <p>{driveStatus}</p>}
+                    {selected.driveFolderUrl && (
+                      <div className="drive-links">
+                        <a href={selected.driveFolderUrl} target="_blank" rel="noreferrer">Abrir pasta completa ↗</a>
+                        {(selected.driveFiles || []).map((file) => <a key={file.id} href={file.webViewLink} target="_blank" rel="noreferrer">{file.name} ↗</a>)}
+                      </div>
+                    )}
+                  </div>
+                  </>
                 )}
               </>
             ) : (

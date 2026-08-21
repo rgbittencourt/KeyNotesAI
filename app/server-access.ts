@@ -26,6 +26,15 @@ async function init() {
         d.prepare(
           "CREATE INDEX IF NOT EXISTS idx_api_usage_period ON api_usage(period)",
         ),
+        d.prepare(
+          "CREATE TABLE IF NOT EXISTS drive_exports (id TEXT PRIMARY KEY, email TEXT NOT NULL, local_meeting_id TEXT NOT NULL, meeting_title TEXT NOT NULL, folder_id TEXT NOT NULL, folder_url TEXT NOT NULL, files_json TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (email) REFERENCES app_users(email) ON DELETE CASCADE)",
+        ),
+        d.prepare(
+          "CREATE INDEX IF NOT EXISTS idx_drive_exports_email_created ON drive_exports(email,created_at)",
+        ),
+        d.prepare(
+          "CREATE TABLE IF NOT EXISTS google_drive_integrations (id TEXT PRIMARY KEY, account_email TEXT NOT NULL, encrypted_refresh_token TEXT NOT NULL, root_folder_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        ),
       ]);
     })();
   return initialized;

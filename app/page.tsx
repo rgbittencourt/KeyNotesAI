@@ -35,6 +35,9 @@ export type DeviceRecording = {
   processedAt?: string;
   processingMode?: "semantic" | "local";
   transcriptionMode?: "hybrid" | "openai";
+  driveFolderUrl?: string;
+  driveFiles?: Array<{ id: string; name: string; webViewLink: string }>;
+  driveSyncedAt?: string;
 };
 type ScheduledMeeting = {
   id: number;
