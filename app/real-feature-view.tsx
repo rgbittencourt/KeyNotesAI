@@ -44,11 +44,10 @@ export default function RealFeatureView(p: Props) {
   const filePhotoRef = useRef<HTMLInputElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null),
     [draft, setDraft] = useState(""),
     [question, setQuestion] = useState(""),
-    [answer, setAnswer] = useState(""),
-    [lastQuestion, setLastQuestion] = useState(""),
     [transcribing, setTranscribing] = useState(false),
     [analyzing, setAnalyzing] = useState(false),
     [archivingDrive, setArchivingDrive] = useState(false),
@@ -341,17 +340,51 @@ export default function RealFeatureView(p: Props) {
     });
     p.notify("Foto removida da reunião");
   }
-  function ask() {
-    if (!selected) {
-      setAnswer("Selecione uma reunião.");
+  async function ask() {
+    const target = selected || p.recordings.find((recording) => recording.transcript);
+    const cleanQuestion = question.trim();
+    if (!target) {
+      p.notify("Selecione uma reunião");
       return;
     }
-    if (!question.trim()) {
-      setAnswer("Digite uma pergunta sobre a reunião.");
+    if (!cleanQuestion) {
+      p.notify("Digite uma pergunta sobre a reunião");
       return;
     }
-    setAnswer(answerMeetingQuestion(selected, question, lastQuestion));
-    setLastQuestion(question);
+    const history = target.chatHistory || [];
+    const previousQuestion = [...history]
+      .reverse()
+      .find((message) => message.role === "user")?.text;
+    const now = new Date().toISOString();
+    const response = answerMeetingQuestion(
+      target,
+      cleanQuestion,
+      previousQuestion || "",
+    );
+    await p.updateRecording(target.id, {
+      chatHistory: [
+        ...history,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          text: cleanQuestion,
+          createdAt: now,
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: response,
+          createdAt: now,
+        },
+      ],
+    });
+    setQuestion("");
+    window.setTimeout(() =>
+      chatLogRef.current?.scrollTo({
+        top: chatLogRef.current.scrollHeight,
+        behavior: "smooth",
+      }),
+    );
   }
   if (p.active === "Reuniões")
     return (
@@ -830,12 +863,17 @@ export default function RealFeatureView(p: Props) {
           </select>
         </aside>
         <article className="card chat-panel">
-          {answer ? (
-            <div className="ai-answer">
-              <span>⌕</span>
-              <div>
-                <p>{answer}</p>
-              </div>
+          {qaMeeting?.chatHistory?.length ? (
+            <div className="chat-history" ref={chatLogRef}>
+              {qaMeeting.chatHistory.map((message) => (
+                <div
+                  className={`chat-message ${message.role}`}
+                  key={message.id}
+                >
+                  <span>{message.role === "assistant" ? "⌕" : "Você"}</span>
+                  <p>{message.text}</p>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="chat-empty">
@@ -851,10 +889,15 @@ export default function RealFeatureView(p: Props) {
             <input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && ask()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void ask();
+                }
+              }}
               placeholder="Ex.: Quem estava presente?"
             />
-            <button onClick={ask}>↑</button>
+            <button onClick={() => void ask()}>↑</button>
           </div>
         </article>
       </div>

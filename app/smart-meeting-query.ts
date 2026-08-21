@@ -17,12 +17,18 @@ export function answerMeetingQuestion(recording:DeviceRecording,question:string,
  const asksDuration=/quanto tempo|qual (a )?duracao|durou/.test(normalizedQuestion);
  const asksLocation=/onde (foi|aconteceu|ocorreu)|qual (o )?local|setor/.test(normalizedQuestion);
  const asksAgenda=/qual (era|foi) (a )?pauta|assuntos? (foram|foi)|sobre o que|o que foi (discutido|tratado)|tema/.test(normalizedQuestion);
+ const asksSummary=/resumo|resuma|sintese|principais pontos|o que foi falado|o que aconteceu/.test(normalizedQuestion);
  if(asksParticipants){const people=(recording.participants||"").split(/[,;\n]/).map(x=>x.trim()).filter(Boolean);return people.length?`Participantes registrados: ${people.join(", ")}.`:"A lista de presença desta reunião ainda não foi preenchida."}
  if(asksMeetingDate)return`A reunião “${recording.name}” foi registrada em ${recording.meetingDate||recording.createdAt}${recording.meetingTime?`, às ${recording.meetingTime}`:""}.`;
  if(asksMeetingTime)return recording.meetingTime?`O horário registrado foi ${recording.meetingTime}.`:"O horário da reunião não foi informado.";
  if(asksDuration)return`A duração registrada da reunião foi ${recording.duration}.`;
  if(asksLocation)return recording.department?`O local ou setor informado foi: ${recording.department}.`:"O local ou setor desta reunião não foi informado.";
  if(asksAgenda)return recording.agenda?`A pauta registrada foi:\n${recording.agenda.split("\n").filter(Boolean).map(item=>`• ${item}`).join("\n")}`:"A pauta desta reunião não foi preenchida.";
+ if(asksSummary){
+  if(recording.summary?.trim())return`Resumo da reunião:\n${recording.summary.trim()}`;
+  const transcriptSentences=(recording.transcript||"").split(/(?<=[.!?])\s+|\n+/).map(x=>x.trim()).filter(Boolean).slice(0,6);
+  return transcriptSentences.length?`Síntese baseada na transcrição disponível:\n${transcriptSentences.map(x=>`• ${x}`).join("\n")}`:"Ainda não há resumo ou transcrição suficiente. Transcreva e analise a reunião primeiro.";
+ }
  if(asksActions&&recording.actions?.length){const relevant=recording.actions.filter(action=>score(`${action.task} ${action.person} ${action.due}`,expanded)>0);const selected=relevant.length?relevant:recording.actions;return`Encontrei ${selected.length} encaminhamento(s):\n${selected.map(action=>`• ${action.task}\n  Responsável: ${action.person} · Prazo: ${action.due} · Prioridade: ${action.priority}`).join("\n")}`}
  if((asksDecisions||asksPending)&&recording.decisions?.length){const wanted=recording.decisions.filter(item=>asksDecisions?item.kind==="decisão":item.kind!=="decisão");const selected=wanted.length?wanted:recording.decisions;return`${asksDecisions?"Decisões":"Pendências e bloqueios"} encontrados:\n${selected.map(item=>`• ${item.text}`).join("\n")}`}
  const contextualQuestion=/^(e |mas |tambem |qual |quem |quando |onde )/.test(normalizedQuestion)&&q.length<5?`${previousQuestion} ${question}`:question,contextExpanded=expand(tokens(contextualQuestion));

@@ -47,6 +47,12 @@ export type DeviceRecording = {
   meetingPhotoBlob?: Blob;
   meetingPhotoUrl?: string;
   meetingPhotoName?: string;
+  chatHistory?: Array<{
+    id: string;
+    role: "user" | "assistant";
+    text: string;
+    createdAt: string;
+  }>;
 };
 type ScheduledMeeting = {
   id: number;
