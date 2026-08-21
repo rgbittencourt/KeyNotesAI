@@ -28,6 +28,12 @@ mínimo e retorna JSON estruturado. A análise separa decisões confirmadas de
 pendências e bloqueios, extrai ações com responsável, prazo, evidência e nível
 de confiança, e rejeita transcrições excessivamente grandes.
 
+Cada reunião pode usar transcrição híbrida ou totalmente pela OpenAI. O modo
+híbrido é o padrão e transcreve no aparelho antes de enviar apenas o texto para
+geração dos documentos. No modo totalmente OpenAI, o áudio é enviado para
+`POST /api/transcribe-meeting`, que usa `gpt-transcribe` por padrão; o modelo
+pode ser alterado com `OPENAI_TRANSCRIPTION_MODEL`.
+
 This starter does not use `wrangler.jsonc`.
 
 ## Included Shape

@@ -1,60 +1,1022 @@
 "use client";
-import{useEffect,useMemo,useState}from"react";
-import{type MeetingDecision}from"./local-processing";
-import{analyzeTranscriptSemantically}from"./semantic-processing";
-import{transcribeAudioInChunks,type TranscriptionQuality}from"./chunked-transcription";
-import{openProfessionalDocument}from"./professional-documents";
-import{answerMeetingQuestion}from"./smart-meeting-query";
-import type{DeviceRecording}from"./page";
+import { useEffect, useMemo, useState } from "react";
+import { type MeetingDecision } from "./local-processing";
+import { analyzeTranscriptSemantically } from "./semantic-processing";
+import {
+  transcribeAudioInChunks,
+  type TranscriptionQuality,
+} from "./chunked-transcription";
+import { transcribeAudioWithOpenAI } from "./openai-transcription";
+import { openProfessionalDocument } from "./professional-documents";
+import { answerMeetingQuestion } from "./smart-meeting-query";
+import type { DeviceRecording } from "./page";
 
-type Props={active:string;recordings:DeviceRecording[];recording:boolean;recordingSeconds:number;stopRecording:()=>void;notify:(s:string)=>void;updateRecording:(id:number,patch:Partial<DeviceRecording>)=>Promise<void>;deleteRecording:(id:number)=>Promise<void>;liveParticipants:string[];listeningParticipant:boolean;captureParticipant:()=>void;registerParticipant:(name:string)=>void;navigate:(active:string)=>void};
-const download=(name:string,content:string)=>{const u=URL.createObjectURL(new Blob([content],{type:"text/plain;charset=utf-8"})),a=document.createElement("a");a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)};
+type Props = {
+  active: string;
+  recordings: DeviceRecording[];
+  recording: boolean;
+  recordingSeconds: number;
+  stopRecording: () => void;
+  notify: (s: string) => void;
+  updateRecording: (
+    id: number,
+    patch: Partial<DeviceRecording>,
+  ) => Promise<void>;
+  deleteRecording: (id: number) => Promise<void>;
+  liveParticipants: string[];
+  listeningParticipant: boolean;
+  captureParticipant: () => void;
+  registerParticipant: (name: string) => void;
+  navigate: (active: string) => void;
+};
+const download = (name: string, content: string) => {
+  const u = URL.createObjectURL(
+      new Blob([content], { type: "text/plain;charset=utf-8" }),
+    ),
+    a = document.createElement("a");
+  a.href = u;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(u);
+};
 
-export default function RealFeatureView(p:Props){
- const[selectedId,setSelectedId]=useState<number|null>(null),[draft,setDraft]=useState(""),[question,setQuestion]=useState(""),[answer,setAnswer]=useState(""),[lastQuestion,setLastQuestion]=useState(""),[transcribing,setTranscribing]=useState(false),[analyzing,setAnalyzing]=useState(false),[analysisIssue,setAnalysisIssue]=useState(""),[transcriptionStatus,setTranscriptionStatus]=useState(""),[transcriptionProgress,setTranscriptionProgress]=useState(0),[transcriptionQuality,setTranscriptionQuality]=useState<TranscriptionQuality>("accurate");
- const selected=p.recordings.find(r=>r.id===(selectedId??p.recordings[0]?.id));
- useEffect(()=>setDraft(selected?.transcript||""),[selected?.id,selected?.transcript]);
- useEffect(()=>{const receive=(event:MessageEvent)=>{if(event.origin!==location.origin||event.data?.type!=="keynotesai:save-document")return;const recording=p.recordings.find(r=>r.id===event.data.recordingId),kind=event.data.kind as "ata"|"resumo"|"acoes"|"decisoes";if(!recording||!["ata","resumo","acoes","decisoes"].includes(kind)||typeof event.data.html!=="string")return;void p.updateRecording(recording.id,{documentOverrides:{...recording.documentOverrides,[kind]:event.data.html}}).then(()=>p.notify("Documento revisado salvo na reunião"))};window.addEventListener("message",receive);return()=>window.removeEventListener("message",receive)},[p.recordings,p.updateRecording,p.notify]);
- const allActions=useMemo(()=>p.recordings.flatMap(r=>(r.actions||[]).map(a=>({...a,meeting:r.name,recordingId:r.id}))),[p.recordings]);
- const allDecisions=useMemo(()=>p.recordings.flatMap(r=>(r.decisions||[]).map((d,decisionIndex)=>({...d,meeting:r.name,recordingId:r.id,decisionIndex}))),[p.recordings]);
- async function process(){if(!selected||!draft.trim()){p.notify("Digite ou cole a transcrição primeiro");return}setAnalyzing(true);setAnalysisIssue("");try{const result=await analyzeTranscriptSemantically(draft);await p.updateRecording(selected.id,{transcript:draft,...result,documentOverrides:{}});p.notify("Análise semântica e documentos concluídos")}catch(error){const message=error instanceof Error?error.message:"Não foi possível analisar a reunião";setAnalysisIssue(message);p.notify("Falha na análise semântica")}finally{setAnalyzing(false)}}
- async function transcribeLocally(){
-  if(!selected||transcribing)return;
-  setTranscribing(true);setTranscriptionProgress(0);setTranscriptionStatus("Preparando o áudio em partes…");
-  try{
-   const blob=await fetch(selected.url).then(r=>r.blob());
-   const text=await transcribeAudioInChunks(blob,(message,percent)=>{setTranscriptionStatus(message);setTranscriptionProgress(percent)},transcriptionQuality);
-   setDraft(text);await p.updateRecording(selected.id,{transcript:text});setTranscriptionProgress(100);setTranscriptionStatus("Transcrição concluída");p.notify("Áudio transcrito em partes neste aparelho");
-  }catch(error){
-   const message=error instanceof Error?error.message:"Não foi possível transcrever este áudio";
-   setTranscriptionStatus(message);p.notify("Falha na transcrição local");
-  }finally{setTranscribing(false)}
- }
- function ask(){if(!selected){setAnswer("Selecione uma reunião.");return}if(!question.trim()){setAnswer("Digite uma pergunta sobre a reunião.");return}setAnswer(answerMeetingQuestion(selected,question,lastQuestion));setLastQuestion(question)}
- if(p.active==="Reuniões")return <section className="feature-page">{p.recording?<><div className="feature-title"><div><p className="eyebrow">SUA REUNIÃO EM ANDAMENTO</p><h1>Nova reunião</h1><p>Captura real neste aparelho</p></div><div className="live-pill"><i/> AO VIVO · {String(Math.floor(p.recordingSeconds/60)).padStart(2,"0")}:{String(p.recordingSeconds%60).padStart(2,"0")}</div></div><div className="active-meeting-grid"><article className="card active-capture"><div className="capture-orbit"><span>●</span></div><p className="eyebrow">CAPTURA DE ÁUDIO</p><h2>Gravação em andamento</h2><strong>{String(Math.floor(p.recordingSeconds/60)).padStart(2,"0")}:{String(p.recordingSeconds%60).padStart(2,"0")}</strong><div className="capture-bars">{Array.from({length:12},(_,i)=><i key={i}/>)}</div><p>Ao encerrar, o áudio será registrado no histórico e aberto em Arquivos.</p><button onClick={p.stopRecording}><i/> Encerrar e salvar reunião</button></article><SmartAttendance participants={p.liveParticipants} listening={p.listeningParticipant} capture={p.captureParticipant} register={p.registerParticipant}/></div></>:<div className="no-live-meeting card"><span>◉</span><p className="eyebrow">NENHUMA REUNIÃO EM ANDAMENTO</p><h1>Inicie uma gravação</h1><p>Use a Visão geral para começar. Esta área mostrará somente a reunião real.</p></div>}</section>;
- if(p.active==="Arquivos")return <section className="feature-page"><div className="feature-title"><div><p className="eyebrow">BIBLIOTECA</p><h1>Reuniões e documentos</h1><p>Selecione uma reunião para ouvir, transcrever e gerar seus documentos.</p></div></div><div className="library-grid"><article className="card library-card"><div className="card-head"><div><p className="eyebrow">REUNIÕES REAIS</p><h2>Gravações</h2></div><span>{p.recordings.length}</span></div>{p.recordings.length===0?<Empty text="Nenhuma gravação concluída"/>:p.recordings.map(r=><div className={`recording-row ${selected?.id===r.id?"selected":""}`} key={r.id} onClick={()=>setSelectedId(r.id)}><span>▶</span><div><strong>{r.name}</strong><small>{r.createdAt} · {r.duration} · {r.size}</small><audio controls src={r.url} onClick={e=>e.stopPropagation()}/></div><div className="record-file-actions"><a href={r.url} download={`${r.name}.webm`} onClick={e=>e.stopPropagation()}>↓ Baixar</a><button onClick={async e=>{e.stopPropagation();if(confirm(`Excluir “${r.name}” e apagar gravação, transcrição, documentos, ações e decisões? Esta ação não pode ser desfeita.`)){await p.deleteRecording(r.id);if(selectedId===r.id)setSelectedId(null)}}}>Excluir</button></div></div>)}</article><article className="card library-card meeting-workspace"><div className="card-head"><div><p className="eyebrow">REUNIÃO SELECIONADA</p><h2>{selected?.name||"Nenhuma reunião"}</h2></div>{selected&&<span className="processing-badge">{selected.processedAt?(selected.processingMode==="semantic"?"Analisada semanticamente":"Processada no modo antigo"):selected.transcript?"Transcrita":"Aguardando transcrição"}</span>}</div>{selected?<><MeetingMetadata recording={selected} update={p.updateRecording} notify={p.notify}/><div className="local-transcriber"><div><strong>Whisper local em português</strong><small>Use “Mais preciso” para reuniões. Na primeira vez, o modelo escolhido será baixado para este aparelho.</small></div><div className="transcription-controls"><select value={transcriptionQuality} onChange={e=>setTranscriptionQuality(e.target.value as TranscriptionQuality)} disabled={transcribing} aria-label="Qualidade da transcrição"><option value="accurate">Mais preciso</option><option value="balanced">Equilibrado</option><option value="fast">Mais rápido</option></select><button onClick={transcribeLocally} disabled={transcribing}>{transcribing?"Transcrevendo…":"Transcrever áudio"}</button></div>{transcriptionStatus&&<div className="transcription-progress"><i style={{width:`${transcriptionProgress}%`}}/><span>{transcriptionStatus}{transcriptionProgress>0&&transcriptionProgress<100?` · ${transcriptionProgress}%`:""}</span></div>}</div><label className="transcript-editor"><strong>Transcrição da reunião</strong><small>Revise o texto antes da análise. A IA usará somente esta transcrição como fonte.</small><textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="A transcrição automática aparecerá aqui."/></label><div className="semantic-note"><strong>Análise semântica estruturada</strong><p>Seleciona os temas mais importantes e extrai decisões, ações, responsáveis, prazos, riscos, evidências e confiança sem depender de palavras-chave.</p></div>{analysisIssue&&<div className="analysis-issue" role="alert">{analysisIssue}</div>}<div className="processing-actions"><button onClick={async()=>{await p.updateRecording(selected.id,{transcript:draft});p.notify("Transcrição salva")}}>Salvar transcrição</button><button className="primary-btn" onClick={process} disabled={analyzing}>{analyzing?"Analisando reunião…":"Analisar com IA e gerar documentos"}</button></div>{selected.processedAt&&<div className="generated-docs"><Doc title="Ata da reunião" onClick={()=>openProfessionalDocument(selected,"ata")}/><Doc title="Resumo executivo" onClick={()=>openProfessionalDocument(selected,"resumo")}/><Doc title="Matriz de ações" onClick={()=>openProfessionalDocument(selected,"acoes")}/><Doc title="Decisões e bloqueios" onClick={()=>openProfessionalDocument(selected,"decisoes")}/></div>}</>:<Empty text="Grave ou importe um áudio para começar"/>}</article></div></section>;
- if(p.active==="Ações")return <section className="feature-page"><div className="feature-title"><div><p className="eyebrow">ACTION MATRIX</p><h1>Ações reais</h1><p>Itens extraídos das transcrições processadas.</p></div><button className="primary-btn" onClick={()=>p.notify("Conecte o Trello quando a API Key estiver disponível")}>Sincronizar com Trello</button></div><article className="card matrix-full">{allActions.length===0?<Empty text="Nenhuma ação identificada nas reuniões processadas"/>:allActions.map(a=><div className="local-action" key={a.id}><button className={a.done?"done":""} onClick={()=>p.updateRecording(a.recordingId,{actions:p.recordings.find(r=>r.id===a.recordingId)?.actions?.map(x=>x.id===a.id?{...x,done:!x.done}:x)})}>{a.done?"✓":""}</button><div><strong>{a.task}</strong><small>{a.meeting}</small></div><span>{a.person}</span><time>{a.due}</time><em>{a.priority}</em></div>)}</article></section>;
- if(p.active==="Decisões")return <DecisionBoard decisions={allDecisions} recordings={p.recordings} update={p.updateRecording} notify={p.notify} openMeeting={id=>{setSelectedId(id);p.navigate("Arquivos")}}/>;
- const qaMeeting=selected||p.recordings.find(r=>r.transcript);
- return <section className="feature-page qa-page"><div className="feature-title"><div><p className="eyebrow">PERGUNTE À REUNIÃO</p><h1>Converse com a reunião.</h1><p>Pergunte com suas próprias palavras. As respostas usam somente os dados reais da reunião.</p></div></div><div className="qa-grid"><aside className="card meeting-picker"><label>REUNIÃO</label><select value={qaMeeting?.id||""} onChange={e=>setSelectedId(Number(e.target.value))}><option value="">Selecione</option>{p.recordings.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></aside><article className="card chat-panel">{answer?<div className="ai-answer"><span>⌕</span><div><p>{answer}</p></div></div>:<div className="chat-empty"><span>⌕</span><h2>Pergunte sobre a reunião</h2><p>Pergunte sobre participantes, data, pauta, decisões, tarefas, responsáveis ou qualquer assunto discutido.</p></div>}<div className="ask-box"><input value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={e=>e.key==="Enter"&&ask()} placeholder="Ex.: Quem estava presente?"/><button onClick={ask}>↑</button></div></article></div></section>;
+export default function RealFeatureView(p: Props) {
+  const [selectedId, setSelectedId] = useState<number | null>(null),
+    [draft, setDraft] = useState(""),
+    [question, setQuestion] = useState(""),
+    [answer, setAnswer] = useState(""),
+    [lastQuestion, setLastQuestion] = useState(""),
+    [transcribing, setTranscribing] = useState(false),
+    [analyzing, setAnalyzing] = useState(false),
+    [analysisIssue, setAnalysisIssue] = useState(""),
+    [transcriptionStatus, setTranscriptionStatus] = useState(""),
+    [transcriptionProgress, setTranscriptionProgress] = useState(0),
+    [transcriptionQuality, setTranscriptionQuality] =
+      useState<TranscriptionQuality>("accurate");
+  const selected = p.recordings.find(
+    (r) => r.id === (selectedId ?? p.recordings[0]?.id),
+  );
+  useEffect(
+    () => setDraft(selected?.transcript || ""),
+    [selected?.id, selected?.transcript],
+  );
+  useEffect(() => {
+    const receive = (event: MessageEvent) => {
+      if (
+        event.origin !== location.origin ||
+        event.data?.type !== "keynotesai:save-document"
+      )
+        return;
+      const recording = p.recordings.find(
+          (r) => r.id === event.data.recordingId,
+        ),
+        kind = event.data.kind as "ata" | "resumo" | "acoes" | "decisoes";
+      if (
+        !recording ||
+        !["ata", "resumo", "acoes", "decisoes"].includes(kind) ||
+        typeof event.data.html !== "string"
+      )
+        return;
+      void p
+        .updateRecording(recording.id, {
+          documentOverrides: {
+            ...recording.documentOverrides,
+            [kind]: event.data.html,
+          },
+        })
+        .then(() => p.notify("Documento revisado salvo na reunião"));
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [p.recordings, p.updateRecording, p.notify]);
+  const allActions = useMemo(
+    () =>
+      p.recordings.flatMap((r) =>
+        (r.actions || []).map((a) => ({
+          ...a,
+          meeting: r.name,
+          recordingId: r.id,
+        })),
+      ),
+    [p.recordings],
+  );
+  const allDecisions = useMemo(
+    () =>
+      p.recordings.flatMap((r) =>
+        (r.decisions || []).map((d, decisionIndex) => ({
+          ...d,
+          meeting: r.name,
+          recordingId: r.id,
+          decisionIndex,
+        })),
+      ),
+    [p.recordings],
+  );
+  async function process() {
+    if (!selected || !draft.trim()) {
+      p.notify("Digite ou cole a transcrição primeiro");
+      return;
+    }
+    setAnalyzing(true);
+    setAnalysisIssue("");
+    try {
+      const result = await analyzeTranscriptSemantically(draft);
+      await p.updateRecording(selected.id, {
+        transcript: draft,
+        ...result,
+        documentOverrides: {},
+      });
+      p.notify("Análise semântica e documentos concluídos");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Não foi possível analisar a reunião";
+      setAnalysisIssue(message);
+      p.notify("Falha na análise semântica");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+  async function transcribeLocally() {
+    if (!selected || transcribing) return;
+    setTranscribing(true);
+    setTranscriptionProgress(0);
+    setTranscriptionStatus("Preparando o áudio em partes…");
+    try {
+      const blob = await fetch(selected.url).then((r) => r.blob());
+      const text = await transcribeAudioInChunks(
+        blob,
+        (message, percent) => {
+          setTranscriptionStatus(message);
+          setTranscriptionProgress(percent);
+        },
+        transcriptionQuality,
+      );
+      setDraft(text);
+      await p.updateRecording(selected.id, { transcript: text });
+      setTranscriptionProgress(100);
+      setTranscriptionStatus("Transcrição concluída");
+      p.notify("Áudio transcrito em partes neste aparelho");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Não foi possível transcrever este áudio";
+      setTranscriptionStatus(message);
+      p.notify("Falha na transcrição local");
+    } finally {
+      setTranscribing(false);
+    }
+  }
+  async function transcribeWithOpenAI() {
+    if (!selected || transcribing) return;
+    setTranscribing(true);
+    setTranscriptionProgress(15);
+    setTranscriptionStatus("Enviando áudio com segurança para a OpenAI…");
+    try {
+      const blob = await fetch(selected.url).then((r) => r.blob());
+      setTranscriptionProgress(45);
+      setTranscriptionStatus("A OpenAI está transcrevendo a reunião…");
+      const text = await transcribeAudioWithOpenAI(blob);
+      setDraft(text);
+      await p.updateRecording(selected.id, {
+        transcript: text,
+        transcriptionMode: "openai",
+      });
+      setTranscriptionProgress(100);
+      setTranscriptionStatus("Transcrição concluída pela OpenAI");
+      p.notify("Áudio transcrito pela OpenAI");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Não foi possível transcrever pela OpenAI";
+      setTranscriptionStatus(message);
+      p.notify("Falha na transcrição pela OpenAI");
+    } finally {
+      setTranscribing(false);
+    }
+  }
+  function ask() {
+    if (!selected) {
+      setAnswer("Selecione uma reunião.");
+      return;
+    }
+    if (!question.trim()) {
+      setAnswer("Digite uma pergunta sobre a reunião.");
+      return;
+    }
+    setAnswer(answerMeetingQuestion(selected, question, lastQuestion));
+    setLastQuestion(question);
+  }
+  if (p.active === "Reuniões")
+    return (
+      <section className="feature-page">
+        {p.recording ? (
+          <>
+            <div className="feature-title">
+              <div>
+                <p className="eyebrow">SUA REUNIÃO EM ANDAMENTO</p>
+                <h1>Nova reunião</h1>
+                <p>Captura real neste aparelho</p>
+              </div>
+              <div className="live-pill">
+                <i /> AO VIVO ·{" "}
+                {String(Math.floor(p.recordingSeconds / 60)).padStart(2, "0")}:
+                {String(p.recordingSeconds % 60).padStart(2, "0")}
+              </div>
+            </div>
+            <div className="active-meeting-grid">
+              <article className="card active-capture">
+                <div className="capture-orbit">
+                  <span>●</span>
+                </div>
+                <p className="eyebrow">CAPTURA DE ÁUDIO</p>
+                <h2>Gravação em andamento</h2>
+                <strong>
+                  {String(Math.floor(p.recordingSeconds / 60)).padStart(2, "0")}
+                  :{String(p.recordingSeconds % 60).padStart(2, "0")}
+                </strong>
+                <div className="capture-bars">
+                  {Array.from({ length: 12 }, (_, i) => (
+                    <i key={i} />
+                  ))}
+                </div>
+                <p>
+                  Ao encerrar, o áudio será registrado no histórico e aberto em
+                  Arquivos.
+                </p>
+                <button onClick={p.stopRecording}>
+                  <i /> Encerrar e salvar reunião
+                </button>
+              </article>
+              <SmartAttendance
+                participants={p.liveParticipants}
+                listening={p.listeningParticipant}
+                capture={p.captureParticipant}
+                register={p.registerParticipant}
+              />
+            </div>
+          </>
+        ) : (
+          <div className="no-live-meeting card">
+            <span>◉</span>
+            <p className="eyebrow">NENHUMA REUNIÃO EM ANDAMENTO</p>
+            <h1>Inicie uma gravação</h1>
+            <p>
+              Use a Visão geral para começar. Esta área mostrará somente a
+              reunião real.
+            </p>
+          </div>
+        )}
+      </section>
+    );
+  if (p.active === "Arquivos")
+    return (
+      <section className="feature-page">
+        <div className="feature-title">
+          <div>
+            <p className="eyebrow">BIBLIOTECA</p>
+            <h1>Reuniões e documentos</h1>
+            <p>
+              Selecione uma reunião para ouvir, transcrever e gerar seus
+              documentos.
+            </p>
+          </div>
+        </div>
+        <div className="library-grid">
+          <article className="card library-card">
+            <div className="card-head">
+              <div>
+                <p className="eyebrow">REUNIÕES REAIS</p>
+                <h2>Gravações</h2>
+              </div>
+              <span>{p.recordings.length}</span>
+            </div>
+            {p.recordings.length === 0 ? (
+              <Empty text="Nenhuma gravação concluída" />
+            ) : (
+              p.recordings.map((r) => (
+                <div
+                  className={`recording-row ${selected?.id === r.id ? "selected" : ""}`}
+                  key={r.id}
+                  onClick={() => setSelectedId(r.id)}
+                >
+                  <span>▶</span>
+                  <div>
+                    <strong>{r.name}</strong>
+                    <small>
+                      {r.createdAt} · {r.duration} · {r.size}
+                    </small>
+                    <audio
+                      controls
+                      src={r.url}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <div className="record-file-actions">
+                    <a
+                      href={r.url}
+                      download={`${r.name}.webm`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      ↓ Baixar
+                    </a>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (
+                          confirm(
+                            `Excluir “${r.name}” e apagar gravação, transcrição, documentos, ações e decisões? Esta ação não pode ser desfeita.`,
+                          )
+                        ) {
+                          await p.deleteRecording(r.id);
+                          if (selectedId === r.id) setSelectedId(null);
+                        }
+                      }}
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </article>
+          <article className="card library-card meeting-workspace">
+            <div className="card-head">
+              <div>
+                <p className="eyebrow">REUNIÃO SELECIONADA</p>
+                <h2>{selected?.name || "Nenhuma reunião"}</h2>
+              </div>
+              {selected && (
+                <span className="processing-badge">
+                  {selected.processedAt
+                    ? selected.processingMode === "semantic"
+                      ? "Analisada semanticamente"
+                      : "Processada no modo antigo"
+                    : selected.transcript
+                      ? "Transcrita"
+                      : "Aguardando transcrição"}
+                </span>
+              )}
+            </div>
+            {selected ? (
+              <>
+                <MeetingMetadata
+                  recording={selected}
+                  update={p.updateRecording}
+                  notify={p.notify}
+                />
+                <div className="local-transcriber">
+                  <div className="mode-heading">
+                    <strong>Como transcrever esta reunião?</strong>
+                    <small>O modo híbrido é sempre o padrão e mantém o áudio neste aparelho.</small>
+                  </div>
+                  <div className="mode-options">
+                    <label className={(selected.transcriptionMode||"hybrid")==="hybrid"?"selected":""}>
+                      <input type="radio" name="transcription-mode" checked={(selected.transcriptionMode||"hybrid")==="hybrid"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"hybrid"})}/>
+                      <span><b>Híbrido</b><small>Transcrição local + documentos pela OpenAI · ~R$ 0,50/h</small></span>
+                    </label>
+                    <label className={selected.transcriptionMode==="openai"?"selected":""}>
+                      <input type="radio" name="transcription-mode" checked={selected.transcriptionMode==="openai"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"openai"})}/>
+                      <span><b>Totalmente OpenAI</b><small>Áudio e documentos pela API · ~R$ 2,00/h</small></span>
+                    </label>
+                  </div>
+                  <div className="transcription-controls">
+                    {(selected.transcriptionMode||"hybrid")==="hybrid"&&<select value={transcriptionQuality} onChange={(e)=>setTranscriptionQuality(e.target.value as TranscriptionQuality)} disabled={transcribing} aria-label="Qualidade da transcrição">
+                      <option value="accurate">Mais preciso</option><option value="balanced">Equilibrado</option><option value="fast">Mais rápido</option>
+                    </select>}
+                    <button onClick={(selected.transcriptionMode||"hybrid")==="hybrid"?transcribeLocally:transcribeWithOpenAI} disabled={transcribing}>
+                      {transcribing?"Transcrevendo…":(selected.transcriptionMode||"hybrid")==="hybrid"?"Transcrever no aparelho":"Transcrever pela OpenAI"}
+                    </button>
+                  </div>
+                  {transcriptionStatus && (
+                    <div className="transcription-progress">
+                      <i style={{ width: `${transcriptionProgress}%` }} />
+                      <span>
+                        {transcriptionStatus}
+                        {transcriptionProgress > 0 &&
+                        transcriptionProgress < 100
+                          ? ` · ${transcriptionProgress}%`
+                          : ""}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <label className="transcript-editor">
+                  <strong>Transcrição da reunião</strong>
+                  <small>
+                    Revise o texto antes da análise. A IA usará somente esta
+                    transcrição como fonte.
+                  </small>
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="A transcrição automática aparecerá aqui."
+                  />
+                </label>
+                <div className="semantic-note">
+                  <strong>Análise semântica estruturada</strong>
+                  <p>
+                    Seleciona os temas mais importantes e extrai decisões,
+                    ações, responsáveis, prazos, riscos, evidências e confiança
+                    sem depender de palavras-chave.
+                  </p>
+                </div>
+                {analysisIssue && (
+                  <div className="analysis-issue" role="alert">
+                    {analysisIssue}
+                  </div>
+                )}
+                <div className="processing-actions">
+                  <button
+                    onClick={async () => {
+                      await p.updateRecording(selected.id, {
+                        transcript: draft,
+                      });
+                      p.notify("Transcrição salva");
+                    }}
+                  >
+                    Salvar transcrição
+                  </button>
+                  <button
+                    className="primary-btn"
+                    onClick={process}
+                    disabled={analyzing}
+                  >
+                    {analyzing
+                      ? "Analisando reunião…"
+                      : "Analisar com IA e gerar documentos"}
+                  </button>
+                </div>
+                {selected.processedAt && (
+                  <div className="generated-docs">
+                    <Doc
+                      title="Ata da reunião"
+                      onClick={() => openProfessionalDocument(selected, "ata")}
+                    />
+                    <Doc
+                      title="Resumo executivo"
+                      onClick={() =>
+                        openProfessionalDocument(selected, "resumo")
+                      }
+                    />
+                    <Doc
+                      title="Matriz de ações"
+                      onClick={() =>
+                        openProfessionalDocument(selected, "acoes")
+                      }
+                    />
+                    <Doc
+                      title="Decisões e bloqueios"
+                      onClick={() =>
+                        openProfessionalDocument(selected, "decisoes")
+                      }
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              <Empty text="Grave ou importe um áudio para começar" />
+            )}
+          </article>
+        </div>
+      </section>
+    );
+  if (p.active === "Ações")
+    return (
+      <section className="feature-page">
+        <div className="feature-title">
+          <div>
+            <p className="eyebrow">ACTION MATRIX</p>
+            <h1>Ações reais</h1>
+            <p>Itens extraídos das transcrições processadas.</p>
+          </div>
+          <button
+            className="primary-btn"
+            onClick={() =>
+              p.notify("Conecte o Trello quando a API Key estiver disponível")
+            }
+          >
+            Sincronizar com Trello
+          </button>
+        </div>
+        <article className="card matrix-full">
+          {allActions.length === 0 ? (
+            <Empty text="Nenhuma ação identificada nas reuniões processadas" />
+          ) : (
+            allActions.map((a) => (
+              <div className="local-action" key={a.id}>
+                <button
+                  className={a.done ? "done" : ""}
+                  onClick={() =>
+                    p.updateRecording(a.recordingId, {
+                      actions: p.recordings
+                        .find((r) => r.id === a.recordingId)
+                        ?.actions?.map((x) =>
+                          x.id === a.id ? { ...x, done: !x.done } : x,
+                        ),
+                    })
+                  }
+                >
+                  {a.done ? "✓" : ""}
+                </button>
+                <div>
+                  <strong>{a.task}</strong>
+                  <small>{a.meeting}</small>
+                </div>
+                <span>{a.person}</span>
+                <time>{a.due}</time>
+                <em>{a.priority}</em>
+              </div>
+            ))
+          )}
+        </article>
+      </section>
+    );
+  if (p.active === "Decisões")
+    return (
+      <DecisionBoard
+        decisions={allDecisions}
+        recordings={p.recordings}
+        update={p.updateRecording}
+        notify={p.notify}
+        openMeeting={(id) => {
+          setSelectedId(id);
+          p.navigate("Arquivos");
+        }}
+      />
+    );
+  const qaMeeting = selected || p.recordings.find((r) => r.transcript);
+  return (
+    <section className="feature-page qa-page">
+      <div className="feature-title">
+        <div>
+          <p className="eyebrow">PERGUNTE À REUNIÃO</p>
+          <h1>Converse com a reunião.</h1>
+          <p>
+            Pergunte com suas próprias palavras. As respostas usam somente os
+            dados reais da reunião.
+          </p>
+        </div>
+      </div>
+      <div className="qa-grid">
+        <aside className="card meeting-picker">
+          <label>REUNIÃO</label>
+          <select
+            value={qaMeeting?.id || ""}
+            onChange={(e) => setSelectedId(Number(e.target.value))}
+          >
+            <option value="">Selecione</option>
+            {p.recordings.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </aside>
+        <article className="card chat-panel">
+          {answer ? (
+            <div className="ai-answer">
+              <span>⌕</span>
+              <div>
+                <p>{answer}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="chat-empty">
+              <span>⌕</span>
+              <h2>Pergunte sobre a reunião</h2>
+              <p>
+                Pergunte sobre participantes, data, pauta, decisões, tarefas,
+                responsáveis ou qualquer assunto discutido.
+              </p>
+            </div>
+          )}
+          <div className="ask-box">
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && ask()}
+              placeholder="Ex.: Quem estava presente?"
+            />
+            <button onClick={ask}>↑</button>
+          </div>
+        </article>
+      </div>
+    </section>
+  );
 }
-function MeetingMetadata({recording,update,notify}:{recording:DeviceRecording;update:Props["updateRecording"];notify:Props["notify"]}){
- const[form,setForm]=useState({name:recording.name,meetingDate:recording.meetingDate||recording.createdAt,meetingTime:recording.meetingTime||"",participants:recording.participants||"",department:recording.department||"",agenda:recording.agenda||""});
- useEffect(()=>setForm({name:recording.name,meetingDate:recording.meetingDate||recording.createdAt,meetingTime:recording.meetingTime||"",participants:recording.participants||"",department:recording.department||"",agenda:recording.agenda||""}),[recording.id]);
- const field=(key:keyof typeof form,value:string)=>setForm(current=>({...current,[key]:value}));
- return <details className="meeting-metadata" open><summary><span><b>Dados da reunião</b><small>Usados no cabeçalho e nas seções dos documentos</small></span><i>Editar</i></summary><div className="metadata-form"><label>Título<input value={form.name} onChange={e=>field("name",e.target.value)}/></label><label>Data<input type="date" value={form.meetingDate.includes("/")?"":form.meetingDate} onChange={e=>field("meetingDate",e.target.value)}/></label><label>Hora<input type="time" value={form.meetingTime} onChange={e=>field("meetingTime",e.target.value)}/></label><label>Setor ou local<input value={form.department} onChange={e=>field("department",e.target.value)} placeholder="Ex.: Direção de Ensino"/></label><label className="wide">Participantes<textarea value={form.participants} onChange={e=>field("participants",e.target.value)} placeholder="Um nome por linha ou separados por vírgula"/></label><label className="wide">Pauta<textarea value={form.agenda} onChange={e=>field("agenda",e.target.value)} placeholder="Um tópico por linha"/></label><button onClick={async()=>{await update(recording.id,form);notify("Dados da reunião salvos")}}>Salvar dados da reunião</button></div></details>
+function MeetingMetadata({
+  recording,
+  update,
+  notify,
+}: {
+  recording: DeviceRecording;
+  update: Props["updateRecording"];
+  notify: Props["notify"];
+}) {
+  const [form, setForm] = useState({
+    name: recording.name,
+    meetingDate: recording.meetingDate || recording.createdAt,
+    meetingTime: recording.meetingTime || "",
+    participants: recording.participants || "",
+    department: recording.department || "",
+    agenda: recording.agenda || "",
+  });
+  useEffect(
+    () =>
+      setForm({
+        name: recording.name,
+        meetingDate: recording.meetingDate || recording.createdAt,
+        meetingTime: recording.meetingTime || "",
+        participants: recording.participants || "",
+        department: recording.department || "",
+        agenda: recording.agenda || "",
+      }),
+    [recording.id],
+  );
+  const field = (key: keyof typeof form, value: string) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  return (
+    <details className="meeting-metadata" open>
+      <summary>
+        <span>
+          <b>Dados da reunião</b>
+          <small>Usados no cabeçalho e nas seções dos documentos</small>
+        </span>
+        <i>Editar</i>
+      </summary>
+      <div className="metadata-form">
+        <label>
+          Título
+          <input
+            value={form.name}
+            onChange={(e) => field("name", e.target.value)}
+          />
+        </label>
+        <label>
+          Data
+          <input
+            type="date"
+            value={form.meetingDate.includes("/") ? "" : form.meetingDate}
+            onChange={(e) => field("meetingDate", e.target.value)}
+          />
+        </label>
+        <label>
+          Hora
+          <input
+            type="time"
+            value={form.meetingTime}
+            onChange={(e) => field("meetingTime", e.target.value)}
+          />
+        </label>
+        <label>
+          Setor ou local
+          <input
+            value={form.department}
+            onChange={(e) => field("department", e.target.value)}
+            placeholder="Ex.: Direção de Ensino"
+          />
+        </label>
+        <label className="wide">
+          Participantes
+          <textarea
+            value={form.participants}
+            onChange={(e) => field("participants", e.target.value)}
+            placeholder="Um nome por linha ou separados por vírgula"
+          />
+        </label>
+        <label className="wide">
+          Pauta
+          <textarea
+            value={form.agenda}
+            onChange={(e) => field("agenda", e.target.value)}
+            placeholder="Um tópico por linha"
+          />
+        </label>
+        <button
+          onClick={async () => {
+            await update(recording.id, form);
+            notify("Dados da reunião salvos");
+          }}
+        >
+          Salvar dados da reunião
+        </button>
+      </div>
+    </details>
+  );
 }
-function SmartAttendance({participants,listening,capture,register}:{participants:string[];listening:boolean;capture:()=>void;register:(name:string)=>void}){
- const[name,setName]=useState("");
- return <article className="card smart-attendance"><p className="eyebrow">CHAMADA INTELIGENTE</p><h2>Registro de presença</h2><p className="attendance-help">Clique em ouvir e peça ao participante: <b>“Meu nome é… e estou presente.”</b></p><button className={listening?"listening":""} onClick={capture} disabled={listening}><span>◉</span>{listening?"Ouvindo o nome…":"Ouvir próximo participante"}</button><div className="manual-attendance"><input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&name.trim()){register(name);setName("")}}} placeholder="Ou digite o nome"/><button onClick={()=>{if(name.trim()){register(name);setName("")}}}>Adicionar</button></div><div className="attendance-list"><small>{participants.length} PRESENTE(S)</small>{participants.length===0?<p>Nenhuma presença registrada.</p>:participants.map((person,i)=><div key={person}><span>✓</span><strong>{person}</strong><time>{new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</time></div>)}</div><p className="attendance-note">A lista será salva na reunião e incluída automaticamente na ata.</p></article>
+function SmartAttendance({
+  participants,
+  listening,
+  capture,
+  register,
+}: {
+  participants: string[];
+  listening: boolean;
+  capture: () => void;
+  register: (name: string) => void;
+}) {
+  const [name, setName] = useState("");
+  return (
+    <article className="card smart-attendance">
+      <p className="eyebrow">CHAMADA INTELIGENTE</p>
+      <h2>Registro de presença</h2>
+      <p className="attendance-help">
+        Clique em ouvir e peça ao participante:{" "}
+        <b>“Meu nome é… e estou presente.”</b>
+      </p>
+      <button
+        className={listening ? "listening" : ""}
+        onClick={capture}
+        disabled={listening}
+      >
+        <span>◉</span>
+        {listening ? "Ouvindo o nome…" : "Ouvir próximo participante"}
+      </button>
+      <div className="manual-attendance">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && name.trim()) {
+              register(name);
+              setName("");
+            }
+          }}
+          placeholder="Ou digite o nome"
+        />
+        <button
+          onClick={() => {
+            if (name.trim()) {
+              register(name);
+              setName("");
+            }
+          }}
+        >
+          Adicionar
+        </button>
+      </div>
+      <div className="attendance-list">
+        <small>{participants.length} PRESENTE(S)</small>
+        {participants.length === 0 ? (
+          <p>Nenhuma presença registrada.</p>
+        ) : (
+          participants.map((person, i) => (
+            <div key={person}>
+              <span>✓</span>
+              <strong>{person}</strong>
+              <time>
+                {new Date().toLocaleTimeString("pt-BR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </time>
+            </div>
+          ))
+        )}
+      </div>
+      <p className="attendance-note">
+        A lista será salva na reunião e incluída automaticamente na ata.
+      </p>
+    </article>
+  );
 }
-type ManagedDecision=MeetingDecision&{meeting:string;recordingId:number;decisionIndex:number};
-function DecisionBoard({decisions,recordings,update,notify,openMeeting}:{decisions:ManagedDecision[];recordings:DeviceRecording[];update:Props["updateRecording"];notify:Props["notify"];openMeeting:(id:number)=>void}){
- const[editing,setEditing]=useState<string|null>(null),[draft,setDraft]=useState<MeetingDecision|null>(null);
- const key=(item:ManagedDecision)=>item.id||`${item.recordingId}-${item.decisionIndex}`;
- const change=async(item:ManagedDecision,patch:Partial<MeetingDecision>)=>{const recording=recordings.find(r=>r.id===item.recordingId);if(!recording)return;await update(item.recordingId,{decisions:(recording.decisions||[]).map((row,index)=>index===item.decisionIndex?{...row,...patch}:row)});notify("Registro atualizado")};
- const remove=async(item:ManagedDecision)=>{const recording=recordings.find(r=>r.id===item.recordingId);if(!recording||!confirm("Excluir este registro?"))return;await update(item.recordingId,{decisions:(recording.decisions||[]).filter((_,index)=>index!==item.decisionIndex)});notify("Registro excluído")};
- return <section className="feature-page"><div className="feature-title"><div><p className="eyebrow">DECISION LOG</p><h1>Decisões, pendências e bloqueios</h1><p>Revise, classifique e acompanhe os registros provenientes das reuniões.</p></div></div>{decisions.length===0?<div className="card"><Empty text="Nenhuma decisão identificada nas reuniões processadas"/></div>:<div className="decision-grid">{(["decisão","pendência","bloqueio"] as const).map(kind=><article className={`card decision-column ${kind}`} key={kind}><div className="decision-heading"><span>{kind==="decisão"?"✓":kind==="pendência"?"?":"!"}</span><div><small>{decisions.filter(d=>d.kind===kind).length} REGISTROS</small><h2>{kind==="decisão"?"Decisões tomadas":kind==="pendência"?"Pontos pendentes":"Bloqueios"}</h2></div></div>{decisions.filter(d=>d.kind===kind).map(item=>{const isEditing=editing===key(item);return <div className={`decision-record ${item.resolved?"resolved":""}`} key={key(item)}>{isEditing&&draft?<div className="decision-editor"><label>Texto<textarea value={draft.text} onChange={e=>setDraft({...draft,text:e.target.value})}/></label><div><label>Classificação<select value={draft.kind} onChange={e=>setDraft({...draft,kind:e.target.value as MeetingDecision["kind"]})}><option value="decisão">Decisão</option><option value="pendência">Pendência</option><option value="bloqueio">Bloqueio</option></select></label><label>Responsável<input value={draft.person||""} onChange={e=>setDraft({...draft,person:e.target.value})}/></label><label>Prazo<input value={draft.due||""} onChange={e=>setDraft({...draft,due:e.target.value})}/></label></div><footer><button onClick={()=>{setEditing(null);setDraft(null)}}>Cancelar</button><button onClick={async()=>{await change(item,draft);setEditing(null);setDraft(null)}}>Salvar alterações</button></footer></div>:<><strong>{item.text}</strong><div className="decision-meta"><span>{item.person||"A confirmar"}</span><span>{item.due||"Sem prazo"}</span>{typeof item.confidence==="number"&&<span>{Math.round(item.confidence*100)}% confiança</span>}{item.resolved&&<em>Resolvido</em>}</div><details><summary>Ver evidência e origem</summary><blockquote>{item.evidence||item.text}</blockquote><button onClick={()=>openMeeting(item.recordingId)}>Abrir reunião: {item.meeting}</button></details><div className="decision-tools"><button onClick={()=>change(item,{resolved:!item.resolved})}>{item.resolved?"Reabrir":"Marcar resolvido"}</button><button onClick={()=>{setEditing(key(item));setDraft({...item})}}>Editar</button><button className="danger" onClick={()=>remove(item)}>Excluir</button></div></>}</div>})}</article>)}</div>}</section>
+type ManagedDecision = MeetingDecision & {
+  meeting: string;
+  recordingId: number;
+  decisionIndex: number;
+};
+function DecisionBoard({
+  decisions,
+  recordings,
+  update,
+  notify,
+  openMeeting,
+}: {
+  decisions: ManagedDecision[];
+  recordings: DeviceRecording[];
+  update: Props["updateRecording"];
+  notify: Props["notify"];
+  openMeeting: (id: number) => void;
+}) {
+  const [editing, setEditing] = useState<string | null>(null),
+    [draft, setDraft] = useState<MeetingDecision | null>(null);
+  const key = (item: ManagedDecision) =>
+    item.id || `${item.recordingId}-${item.decisionIndex}`;
+  const change = async (
+    item: ManagedDecision,
+    patch: Partial<MeetingDecision>,
+  ) => {
+    const recording = recordings.find((r) => r.id === item.recordingId);
+    if (!recording) return;
+    await update(item.recordingId, {
+      decisions: (recording.decisions || []).map((row, index) =>
+        index === item.decisionIndex ? { ...row, ...patch } : row,
+      ),
+    });
+    notify("Registro atualizado");
+  };
+  const remove = async (item: ManagedDecision) => {
+    const recording = recordings.find((r) => r.id === item.recordingId);
+    if (!recording || !confirm("Excluir este registro?")) return;
+    await update(item.recordingId, {
+      decisions: (recording.decisions || []).filter(
+        (_, index) => index !== item.decisionIndex,
+      ),
+    });
+    notify("Registro excluído");
+  };
+  return (
+    <section className="feature-page">
+      <div className="feature-title">
+        <div>
+          <p className="eyebrow">DECISION LOG</p>
+          <h1>Decisões, pendências e bloqueios</h1>
+          <p>
+            Revise, classifique e acompanhe os registros provenientes das
+            reuniões.
+          </p>
+        </div>
+      </div>
+      {decisions.length === 0 ? (
+        <div className="card">
+          <Empty text="Nenhuma decisão identificada nas reuniões processadas" />
+        </div>
+      ) : (
+        <div className="decision-grid">
+          {(["decisão", "pendência", "bloqueio"] as const).map((kind) => (
+            <article className={`card decision-column ${kind}`} key={kind}>
+              <div className="decision-heading">
+                <span>
+                  {kind === "decisão" ? "✓" : kind === "pendência" ? "?" : "!"}
+                </span>
+                <div>
+                  <small>
+                    {decisions.filter((d) => d.kind === kind).length} REGISTROS
+                  </small>
+                  <h2>
+                    {kind === "decisão"
+                      ? "Decisões tomadas"
+                      : kind === "pendência"
+                        ? "Pontos pendentes"
+                        : "Bloqueios"}
+                  </h2>
+                </div>
+              </div>
+              {decisions
+                .filter((d) => d.kind === kind)
+                .map((item) => {
+                  const isEditing = editing === key(item);
+                  return (
+                    <div
+                      className={`decision-record ${item.resolved ? "resolved" : ""}`}
+                      key={key(item)}
+                    >
+                      {isEditing && draft ? (
+                        <div className="decision-editor">
+                          <label>
+                            Texto
+                            <textarea
+                              value={draft.text}
+                              onChange={(e) =>
+                                setDraft({ ...draft, text: e.target.value })
+                              }
+                            />
+                          </label>
+                          <div>
+                            <label>
+                              Classificação
+                              <select
+                                value={draft.kind}
+                                onChange={(e) =>
+                                  setDraft({
+                                    ...draft,
+                                    kind: e.target
+                                      .value as MeetingDecision["kind"],
+                                  })
+                                }
+                              >
+                                <option value="decisão">Decisão</option>
+                                <option value="pendência">Pendência</option>
+                                <option value="bloqueio">Bloqueio</option>
+                              </select>
+                            </label>
+                            <label>
+                              Responsável
+                              <input
+                                value={draft.person || ""}
+                                onChange={(e) =>
+                                  setDraft({ ...draft, person: e.target.value })
+                                }
+                              />
+                            </label>
+                            <label>
+                              Prazo
+                              <input
+                                value={draft.due || ""}
+                                onChange={(e) =>
+                                  setDraft({ ...draft, due: e.target.value })
+                                }
+                              />
+                            </label>
+                          </div>
+                          <footer>
+                            <button
+                              onClick={() => {
+                                setEditing(null);
+                                setDraft(null);
+                              }}
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              onClick={async () => {
+                                await change(item, draft);
+                                setEditing(null);
+                                setDraft(null);
+                              }}
+                            >
+                              Salvar alterações
+                            </button>
+                          </footer>
+                        </div>
+                      ) : (
+                        <>
+                          <strong>{item.text}</strong>
+                          <div className="decision-meta">
+                            <span>{item.person || "A confirmar"}</span>
+                            <span>{item.due || "Sem prazo"}</span>
+                            {typeof item.confidence === "number" && (
+                              <span>
+                                {Math.round(item.confidence * 100)}% confiança
+                              </span>
+                            )}
+                            {item.resolved && <em>Resolvido</em>}
+                          </div>
+                          <details>
+                            <summary>Ver evidência e origem</summary>
+                            <blockquote>
+                              {item.evidence || item.text}
+                            </blockquote>
+                            <button
+                              onClick={() => openMeeting(item.recordingId)}
+                            >
+                              Abrir reunião: {item.meeting}
+                            </button>
+                          </details>
+                          <div className="decision-tools">
+                            <button
+                              onClick={() =>
+                                change(item, { resolved: !item.resolved })
+                              }
+                            >
+                              {item.resolved ? "Reabrir" : "Marcar resolvido"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditing(key(item));
+                                setDraft({ ...item });
+                              }}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              className="danger"
+                              onClick={() => remove(item)}
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
-function Empty({text}:{text:string}){return <div className="dashboard-empty"><span>◇</span><strong>{text}</strong><p>Não exibimos informações demonstrativas.</p></div>}
-function Doc({title,onClick}:{title:string;onClick:()=>void}){return <button className="generated-doc" onClick={onClick}><span>☷</span><strong>{title}</strong><small>Abrir e baixar →</small></button>}
+function Empty({ text }: { text: string }) {
+  return (
+    <div className="dashboard-empty">
+      <span>◇</span>
+      <strong>{text}</strong>
+      <p>Não exibimos informações demonstrativas.</p>
+    </div>
+  );
+}
+function Doc({ title, onClick }: { title: string; onClick: () => void }) {
+  return (
+    <button className="generated-doc" onClick={onClick}>
+      <span>☷</span>
+      <strong>{title}</strong>
+      <small>Abrir e baixar →</small>
+    </button>
+  );
+}
