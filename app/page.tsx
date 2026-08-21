@@ -44,6 +44,9 @@ export type DeviceRecording = {
   driveFolderUrl?: string;
   driveFiles?: Array<{ id: string; name: string; webViewLink: string }>;
   driveSyncedAt?: string;
+  meetingPhotoBlob?: Blob;
+  meetingPhotoUrl?: string;
+  meetingPhotoName?: string;
 };
 type ScheduledMeeting = {
   id: number;
@@ -97,7 +100,13 @@ async function loadRecordings(): Promise<DeviceRecording[]> {
     req.onsuccess = () =>
       resolve(
         req.result
-          .map((r) => ({ ...r, url: URL.createObjectURL(r.blob) }))
+          .map((r) => ({
+            ...r,
+            url: URL.createObjectURL(r.blob),
+            meetingPhotoUrl: r.meetingPhotoBlob
+              ? URL.createObjectURL(r.meetingPhotoBlob)
+              : undefined,
+          }))
           .reverse(),
       );
     req.onerror = () => reject(req.error);
@@ -871,6 +880,7 @@ export default function Home() {
     if (!target) return;
     await removeRecording(id);
     URL.revokeObjectURL(target.url);
+    if (target.meetingPhotoUrl) URL.revokeObjectURL(target.meetingPhotoUrl);
     setDeviceRecordings((rows) => rows.filter((r) => r.id !== id));
     notify("Reunião e todos os dados vinculados foram excluídos");
   }

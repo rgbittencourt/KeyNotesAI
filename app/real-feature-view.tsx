@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type MeetingDecision } from "./local-processing";
 import { analyzeTranscriptSemantically } from "./semantic-processing";
 import {
@@ -41,6 +41,8 @@ const download = (name: string, content: string) => {
 };
 
 export default function RealFeatureView(p: Props) {
+  const cameraPhotoRef = useRef<HTMLInputElement | null>(null);
+  const filePhotoRef = useRef<HTMLInputElement | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null),
     [draft, setDraft] = useState(""),
     [question, setQuestion] = useState(""),
@@ -207,8 +209,15 @@ export default function RealFeatureView(p: Props) {
     try {
       const audio = await fetch(selected.url).then((response) => response.blob());
       const form = new FormData();
-      form.set("meeting", JSON.stringify(selected));
+      const { meetingPhotoBlob: _photo, ...meeting } = selected;
+      form.set("meeting", JSON.stringify(meeting));
       form.set("audio", audio, `${selected.name}.webm`);
+      if (selected.meetingPhotoBlob)
+        form.set(
+          "photo",
+          selected.meetingPhotoBlob,
+          selected.meetingPhotoName || "Foto da reunião.jpg",
+        );
       setDriveStatus("Criando a pasta e enviando os arquivos…");
       const response = await fetch("/api/drive/archive-meeting", { method: "POST", body: form });
       const body = await response.json() as { error?: string; folder?: { webViewLink: string }; files?: Array<{ id: string; name: string; webViewLink: string }>; createdAt?: string };
@@ -223,6 +232,37 @@ export default function RealFeatureView(p: Props) {
     } finally {
       setArchivingDrive(false);
     }
+  }
+  async function saveMeetingPhoto(file?: File) {
+    if (!selected || !file) return;
+    if (!file.type.startsWith("image/")) {
+      p.notify("Selecione um arquivo de imagem");
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      p.notify("A foto deve ter no máximo 15 MB");
+      return;
+    }
+    if (selected.meetingPhotoUrl)
+      URL.revokeObjectURL(selected.meetingPhotoUrl);
+    await p.updateRecording(selected.id, {
+      meetingPhotoBlob: file,
+      meetingPhotoUrl: URL.createObjectURL(file),
+      meetingPhotoName: file.name || "Foto da reunião.jpg",
+    });
+    p.notify("Foto vinculada à reunião");
+  }
+  async function removeMeetingPhoto() {
+    if (!selected?.meetingPhotoBlob) return;
+    if (!confirm("Remover a foto desta reunião?")) return;
+    if (selected.meetingPhotoUrl)
+      URL.revokeObjectURL(selected.meetingPhotoUrl);
+    await p.updateRecording(selected.id, {
+      meetingPhotoBlob: undefined,
+      meetingPhotoUrl: undefined,
+      meetingPhotoName: undefined,
+    });
+    p.notify("Foto removida da reunião");
   }
   function ask() {
     if (!selected) {
@@ -394,6 +434,64 @@ export default function RealFeatureView(p: Props) {
                   update={p.updateRecording}
                   notify={p.notify}
                 />
+                <div className="meeting-photo-card">
+                  <input
+                    ref={cameraPhotoRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    hidden
+                    onChange={(event) => {
+                      void saveMeetingPhoto(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                  <input
+                    ref={filePhotoRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(event) => {
+                      void saveMeetingPhoto(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                  {selected.meetingPhotoUrl ? (
+                    <img
+                      src={selected.meetingPhotoUrl}
+                      alt={`Registro fotográfico de ${selected.name}`}
+                    />
+                  ) : (
+                    <div className="meeting-photo-placeholder">▣</div>
+                  )}
+                  <div>
+                    <strong>Foto da reunião</strong>
+                    <small>
+                      Anexo separado para registro dos participantes. Não será
+                      inserido na ata.
+                    </small>
+                    {selected.meetingPhotoName && (
+                      <em>{selected.meetingPhotoName}</em>
+                    )}
+                  </div>
+                  <div className="meeting-photo-actions">
+                    <button onClick={() => cameraPhotoRef.current?.click()}>
+                      Tirar foto
+                    </button>
+                    <button onClick={() => filePhotoRef.current?.click()}>
+                      Selecionar arquivo
+                    </button>
+                    {selected.meetingPhotoBlob && (
+                      <button className="danger" onClick={removeMeetingPhoto}>
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                  <p>
+                    Registre a imagem somente com o conhecimento e consentimento
+                    dos participantes.
+                  </p>
+                </div>
                 <div className="local-transcriber">
                   <div className="mode-heading">
                     <strong>Como transcrever esta reunião?</strong>

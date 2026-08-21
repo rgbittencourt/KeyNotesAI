@@ -93,7 +93,7 @@ function documents(meeting: DriveMeeting) {
   ];
 }
 
-export async function archiveMeetingInDrive(meeting: DriveMeeting, audio?: File | null) {
+export async function archiveMeetingInDrive(meeting: DriveMeeting, audio?: File | null, photo?: File | null) {
   const root = DRIVE_ROOT_FOLDER_ID;
   const token = await getDriveAccessToken();
   const folderName = `${folderDate(meeting.meetingDate || meeting.createdAt)} : ${folderTime(meeting.meetingTime)} - ${safeName(meeting.name)}`;
@@ -101,5 +101,9 @@ export async function archiveMeetingInDrive(meeting: DriveMeeting, audio?: File 
   const generated = await Promise.all(documents(meeting).map((doc) => upload(token, folder.id, doc.name, new Blob([doc.html], { type: "text/html;charset=utf-8" }), GOOGLE_DOC_MIME)));
   const files = [...generated];
   if (audio?.size) files.push(await upload(token, folder.id, `00 - Gravação - ${safeName(meeting.name)}.${audio.type.includes("mpeg") ? "mp3" : audio.type.includes("mp4") ? "m4a" : "webm"}`, audio));
+  if (photo?.size) {
+    const extension = photo.type.includes("png") ? "png" : photo.type.includes("webp") ? "webp" : photo.type.includes("heic") ? "heic" : "jpg";
+    files.push(await upload(token, folder.id, `06 - Foto da reunião - ${safeName(meeting.name)}.${extension}`, photo));
+  }
   return { folder, files };
 }
