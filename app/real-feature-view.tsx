@@ -41,8 +41,9 @@ const download = (name: string, content: string) => {
 };
 
 export default function RealFeatureView(p: Props) {
-  const cameraPhotoRef = useRef<HTMLInputElement | null>(null);
   const filePhotoRef = useRef<HTMLInputElement | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null),
     [draft, setDraft] = useState(""),
     [question, setQuestion] = useState(""),
@@ -52,6 +53,11 @@ export default function RealFeatureView(p: Props) {
     [analyzing, setAnalyzing] = useState(false),
     [archivingDrive, setArchivingDrive] = useState(false),
     [driveStatus, setDriveStatus] = useState(""),
+    [cameraOpen, setCameraOpen] = useState(false),
+    [cameraError, setCameraError] = useState(""),
+    [cameraFacing, setCameraFacing] = useState<"user" | "environment">(
+      "environment",
+    ),
     [analysisIssue, setAnalysisIssue] = useState(""),
     [transcriptionStatus, setTranscriptionStatus] = useState(""),
     [transcriptionProgress, setTranscriptionProgress] = useState(0),
@@ -93,6 +99,11 @@ export default function RealFeatureView(p: Props) {
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, [p.recordings, p.updateRecording, p.notify]);
+  useEffect(
+    () => () =>
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop()),
+    [],
+  );
   const allActions = useMemo(
     () =>
       p.recordings.flatMap((r) =>
@@ -251,6 +262,72 @@ export default function RealFeatureView(p: Props) {
       meetingPhotoName: file.name || "Foto da reunião.jpg",
     });
     p.notify("Foto vinculada à reunião");
+  }
+  function stopCamera() {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
+  }
+  function closeCamera() {
+    stopCamera();
+    setCameraOpen(false);
+    setCameraError("");
+  }
+  async function openCamera(
+    facing: "user" | "environment" = cameraFacing,
+  ) {
+    setCameraOpen(true);
+    setCameraError("");
+    stopCamera();
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError(
+        "A câmera não está disponível neste navegador. Use Selecionar arquivo.",
+      );
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facing } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      setCameraFacing(facing);
+      window.setTimeout(() => {
+        if (cameraVideoRef.current) {
+          cameraVideoRef.current.srcObject = stream;
+          void cameraVideoRef.current.play();
+        }
+      });
+    } catch (error) {
+      setCameraError(
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? "Permissão da câmera recusada. Autorize a câmera no navegador ou selecione um arquivo."
+          : "Não foi possível abrir a câmera deste dispositivo.",
+      );
+    }
+  }
+  async function captureCameraPhoto() {
+    const video = cameraVideoRef.current;
+    if (!video?.videoWidth || !video.videoHeight) {
+      setCameraError("A câmera ainda está iniciando. Aguarde um instante.");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.9),
+    );
+    if (!blob) {
+      setCameraError("Não foi possível capturar a imagem.");
+      return;
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    await saveMeetingPhoto(
+      new File([blob], `foto-reuniao-${stamp}.jpg`, { type: "image/jpeg" }),
+    );
+    closeCamera();
   }
   async function removeMeetingPhoto() {
     if (!selected?.meetingPhotoBlob) return;
@@ -436,17 +513,6 @@ export default function RealFeatureView(p: Props) {
                 />
                 <div className="meeting-photo-card">
                   <input
-                    ref={cameraPhotoRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    hidden
-                    onChange={(event) => {
-                      void saveMeetingPhoto(event.target.files?.[0]);
-                      event.target.value = "";
-                    }}
-                  />
-                  <input
                     ref={filePhotoRef}
                     type="file"
                     accept="image/*"
@@ -475,7 +541,7 @@ export default function RealFeatureView(p: Props) {
                     )}
                   </div>
                   <div className="meeting-photo-actions">
-                    <button onClick={() => cameraPhotoRef.current?.click()}>
+                    <button onClick={() => void openCamera()}>
                       Tirar foto
                     </button>
                     <button onClick={() => filePhotoRef.current?.click()}>
@@ -492,6 +558,51 @@ export default function RealFeatureView(p: Props) {
                     dos participantes.
                   </p>
                 </div>
+                {cameraOpen && (
+                  <div
+                    className="camera-modal"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Tirar foto da reunião"
+                  >
+                    <div className="camera-panel">
+                      <div className="camera-panel-head">
+                        <div>
+                          <strong>Foto da reunião</strong>
+                          <small>Posicione os participantes na câmera.</small>
+                        </div>
+                        <button onClick={closeCamera} aria-label="Fechar câmera">
+                          ×
+                        </button>
+                      </div>
+                      <div className="camera-preview">
+                        <video ref={cameraVideoRef} autoPlay muted playsInline />
+                        {cameraError && <p role="alert">{cameraError}</p>}
+                      </div>
+                      <div className="camera-controls">
+                        <button
+                          onClick={() =>
+                            void openCamera(
+                              cameraFacing === "environment"
+                                ? "user"
+                                : "environment",
+                            )
+                          }
+                        >
+                          Trocar câmera
+                        </button>
+                        <button
+                          className="capture"
+                          onClick={() => void captureCameraPhoto()}
+                          disabled={Boolean(cameraError)}
+                        >
+                          ● Capturar foto
+                        </button>
+                        <button onClick={closeCamera}>Cancelar</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="local-transcriber">
                   <div className="mode-heading">
                     <strong>Como transcrever esta reunião?</strong>
