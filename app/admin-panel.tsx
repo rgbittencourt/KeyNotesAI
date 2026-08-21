@@ -8,7 +8,6 @@ type User = {
   monthlyLimit: number;
   used: number;
 };
-type DriveStatus = { connected: boolean; accountEmail: string; rootFolderUrl: string; updatedAt: string | null; credentialsReady: boolean };
 export default function AdminPanel({
   notify,
 }: {
@@ -18,7 +17,6 @@ export default function AdminPanel({
     [email, setEmail] = useState(""),
     [name, setName] = useState(""),
     [limit, setLimit] = useState(50),
-    [drive, setDrive] = useState<DriveStatus | null>(null),
     [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
     setLoading(true);
@@ -30,7 +28,6 @@ export default function AdminPanel({
   }, [notify]);
   useEffect(() => {
     void load();
-    void fetch("/api/admin/drive/status").then((r) => r.json()).then(setDrive).catch(() => null);
   }, [load]);
   async function create() {
     const r = await fetch("/api/admin/users", {
@@ -80,15 +77,6 @@ export default function AdminPanel({
           </p>
         </div>
       </div>
-      <article className="card admin-drive">
-        <div>
-          <strong>Google Drive do INOVALAB</strong>
-          <small>{drive?.accountEmail || "inovalab.cte@gmail.com"} · pasta Reuniões - KeyNotesAI</small>
-        </div>
-        <span className={drive?.connected ? "active" : "disabled"}>{drive?.connected ? "Conectado" : drive?.credentialsReady ? "Aguardando autorização" : "Aguardando credenciais"}</span>
-        <a href={drive?.rootFolderUrl || "https://drive.google.com/drive/folders/15eNIgl3Zxu9j-eKCz8HS01a3KgXOvMIC"} target="_blank" rel="noreferrer">Abrir pasta</a>
-        <button onClick={() => { location.href = "/api/admin/drive/connect"; }} disabled={!drive?.credentialsReady}>{drive?.connected ? "Reconectar conta" : "Conectar conta Google"}</button>
-      </article>
       <article className="card admin-create">
         <div>
           <strong>Autorizar novo usuário</strong>

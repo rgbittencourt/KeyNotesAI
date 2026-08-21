@@ -10,6 +10,12 @@ type SessionUser = {
   monthlyLimit: number;
   used: number;
 };
+type DriveStatus = {
+  connected: boolean;
+  accountEmail: string;
+  rootFolderUrl: string;
+  credentialsReady: boolean;
+};
 
 export type DeviceRecording = {
   id: number;
@@ -658,12 +664,23 @@ export default function Home() {
     useState<"hybrid" | "openai">("hybrid");
   const [liveParticipants, setLiveParticipants] = useState<string[]>([]);
   const [listeningParticipant, setListeningParticipant] = useState(false);
+  const [driveIntegration, setDriveIntegration] =
+    useState<DriveStatus | null>(null);
   useEffect(() => {
     fetch("/api/session")
       .then(async (r) => (r.ok ? (await r.json()).user : null))
       .then(setSession)
       .catch(() => setSession(null));
   }, []);
+  useEffect(() => {
+    if (session?.role !== "admin") return;
+    fetch("/api/admin/drive/status")
+      .then(async (response) =>
+        response.ok ? ((await response.json()) as DriveStatus) : null,
+      )
+      .then(setDriveIntegration)
+      .catch(() => setDriveIntegration(null));
+  }, [session]);
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
@@ -1027,6 +1044,39 @@ export default function Home() {
             <span className="trello-mini">T</span>
             <span>
               Trello<small>Conectado</small>
+            </span>
+            <i>•••</i>
+          </button>
+          <button
+            onClick={() => {
+              if (session.role !== "admin") {
+                notify("Google Drive gerenciado pelo Admin do INOVALAB");
+                return;
+              }
+              if (!driveIntegration?.credentialsReady) {
+                notify("A integração do Google Drive ainda não está pronta");
+                return;
+              }
+              location.href = "/api/admin/drive/connect";
+            }}
+            title={
+              session.role === "admin"
+                ? "Conectar ou reconectar o Google Drive do INOVALAB"
+                : "Integração gerenciada pelo administrador"
+            }
+          >
+            <span className="drive-mini">D</span>
+            <span>
+              Google Drive
+              <small>
+                {session.role !== "admin"
+                  ? "INOVALAB"
+                  : driveIntegration?.connected
+                    ? "Conectado"
+                    : driveIntegration?.credentialsReady
+                      ? "Autorizar"
+                      : "Configurando"}
+              </small>
             </span>
             <i>•••</i>
           </button>
