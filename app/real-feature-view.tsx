@@ -386,6 +386,20 @@ export default function RealFeatureView(p: Props) {
       }),
     );
   }
+  async function updateActionFields(
+    recordingId: number,
+    actionId: string,
+    patch: Partial<Pick<MeetingAction, "person" | "due" | "priority" | "done">>,
+  ) {
+    const recording = p.recordings.find((item) => item.id === recordingId);
+    if (!recording?.actions) return;
+    await p.updateRecording(recordingId, {
+      actions: recording.actions.map((action) =>
+        action.id === actionId ? { ...action, ...patch } : action,
+      ),
+    });
+    if (!("done" in patch)) p.notify("Ação atualizada");
+  }
   if (p.active === "Reuniões")
     return (
       <section className="feature-page">
@@ -797,12 +811,8 @@ export default function RealFeatureView(p: Props) {
                 <button
                   className={a.done ? "done" : ""}
                   onClick={() =>
-                    p.updateRecording(a.recordingId, {
-                      actions: p.recordings
-                        .find((r) => r.id === a.recordingId)
-                        ?.actions?.map((x) =>
-                          x.id === a.id ? { ...x, done: !x.done } : x,
-                        ),
+                    void updateActionFields(a.recordingId, a.id, {
+                      done: !a.done,
                     })
                   }
                 >
@@ -812,9 +822,51 @@ export default function RealFeatureView(p: Props) {
                   <strong>{a.task}</strong>
                   <small>{a.meeting}</small>
                 </div>
-                <span>{a.person}</span>
-                <time>{a.due}</time>
-                <em>{a.priority}</em>
+                <label className="action-edit-field">
+                  <small>Responsável</small>
+                  <input
+                    defaultValue={a.person}
+                    placeholder="A confirmar"
+                    aria-label={`Responsável por ${a.task}`}
+                    onBlur={(event) => {
+                      const person = event.currentTarget.value.trim() || "A confirmar";
+                      if (person !== a.person)
+                        void updateActionFields(a.recordingId, a.id, { person });
+                    }}
+                  />
+                </label>
+                <label className="action-edit-field">
+                  <small>Prazo</small>
+                  <input
+                    defaultValue={a.due}
+                    placeholder="Sem prazo"
+                    aria-label={`Prazo de ${a.task}`}
+                    onBlur={(event) => {
+                      const due = event.currentTarget.value.trim() || "Sem prazo";
+                      if (due !== a.due)
+                        void updateActionFields(a.recordingId, a.id, { due });
+                    }}
+                  />
+                </label>
+                <label className="action-edit-field">
+                  <small>Prioridade</small>
+                  <select
+                    value={a.priority}
+                    aria-label={`Prioridade de ${a.task}`}
+                    onChange={(event) =>
+                      void updateActionFields(a.recordingId, a.id, {
+                        priority: event.currentTarget.value as
+                          | "Alta"
+                          | "Média"
+                          | "Baixa",
+                      })
+                    }
+                  >
+                    <option value="Alta">Alta</option>
+                    <option value="Média">Média</option>
+                    <option value="Baixa">Baixa</option>
+                  </select>
+                </label>
               </div>
             ))
           )}
