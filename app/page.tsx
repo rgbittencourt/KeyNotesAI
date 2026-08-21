@@ -1041,7 +1041,11 @@ export default function Home() {
         <div className="sidebar-bottom">
           <p>INTEGRAÇÕES</p>
           <button onClick={() => notify("Configuração do Trello aberta")}>
-            <span className="trello-mini">T</span>
+            <img
+              className="integration-logo"
+              src="/trello-logo.png"
+              alt="Trello"
+            />
             <span>
               Trello<small>Conectado</small>
             </span>
@@ -1065,7 +1069,11 @@ export default function Home() {
                 : "Integração gerenciada pelo administrador"
             }
           >
-            <span className="drive-mini">D</span>
+            <img
+              className="integration-logo"
+              src="/google-drive-logo.png"
+              alt="Google Drive"
+            />
             <span>
               Google Drive
               <small>
@@ -1316,7 +1324,11 @@ export default function Home() {
                 </div>
                 <div className="trello-card card">
                   <div className="trello-top">
-                    <span className="trello-logo">T</span>
+                    <img
+                      className="trello-logo-image"
+                      src="/trello-logo.png"
+                      alt="Trello"
+                    />
                     <span>Integração ativa</span>
                     <i />
                   </div>
