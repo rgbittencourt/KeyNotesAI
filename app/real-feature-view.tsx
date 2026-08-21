@@ -228,13 +228,17 @@ export default function RealFeatureView(p: Props) {
           selected.meetingPhotoBlob,
           selected.meetingPhotoName || "Foto da reunião.jpg",
         );
-      setDriveStatus("Criando a pasta e enviando os arquivos…");
+      setDriveStatus(
+        selected.driveFolderUrl
+          ? "Atualizando os arquivos na pasta existente…"
+          : "Criando a pasta e enviando os arquivos…",
+      );
       const response = await fetch("/api/drive/archive-meeting", { method: "POST", body: form });
-      const body = await response.json() as { error?: string; folder?: { webViewLink: string }; files?: Array<{ id: string; name: string; webViewLink: string }>; createdAt?: string };
+      const body = await response.json() as { error?: string; folder?: { id: string; webViewLink: string }; files?: Array<{ id: string; name: string; webViewLink: string }>; createdAt?: string };
       if (!response.ok || !body.folder) throw new Error(body.error || "Não foi possível arquivar no Drive.");
-      await p.updateRecording(selected.id, { driveFolderUrl: body.folder.webViewLink, driveFiles: body.files || [], driveSyncedAt: body.createdAt || new Date().toISOString() });
-      setDriveStatus("Reunião arquivada no Google Drive");
-      p.notify("Reunião e documentos salvos no Drive");
+      await p.updateRecording(selected.id, { driveFolderId: body.folder.id, driveFolderUrl: body.folder.webViewLink, driveFiles: body.files || [], driveSyncedAt: body.createdAt || new Date().toISOString() });
+      setDriveStatus(selected.driveFolderUrl ? "Pasta existente atualizada no Google Drive" : "Reunião arquivada no Google Drive");
+      p.notify(selected.driveFolderUrl ? "Arquivos atualizados na mesma pasta do Drive" : "Reunião e documentos salvos no Drive");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao salvar no Google Drive";
       setDriveStatus(message);

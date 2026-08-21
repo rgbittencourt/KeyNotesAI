@@ -42,6 +42,7 @@ export type DeviceRecording = {
   processingMode?: "semantic" | "local";
   transcriptionMode?: "hybrid" | "openai";
   driveFolderUrl?: string;
+  driveFolderId?: string;
   driveFiles?: Array<{ id: string; name: string; webViewLink: string }>;
   driveSyncedAt?: string;
   meetingPhotoBlob?: Blob;

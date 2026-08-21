@@ -18,6 +18,9 @@ export type DriveMeeting = {
   themes?: string[];
   actions?: MeetingAction[];
   decisions?: MeetingDecision[];
+  driveFolderId?: string;
+  driveFolderUrl?: string;
+  driveFiles?: Array<{ id: string; name?: string; webViewLink?: string }>;
 };
 
 const escapeHtml = (value: unknown) =>
@@ -73,6 +76,19 @@ async function upload(token: string, folderId: string, name: string, content: Bl
   });
 }
 
+async function trashFile(token: string, fileId: string) {
+  return googleFetch<DriveFile>(token, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,webViewLink`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ trashed: true }),
+  });
+}
+
+function folderIdFromMeeting(meeting: DriveMeeting) {
+  if (meeting.driveFolderId?.trim()) return meeting.driveFolderId.trim();
+  return meeting.driveFolderUrl?.match(/\/folders\/([a-zA-Z0-9_-]+)/)?.[1] || null;
+}
+
 function documentShell(title: string, meeting: DriveMeeting, body: string) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head><body><h1>${escapeHtml(title)}</h1><h2>${escapeHtml(meeting.name)}</h2><p><b>Data:</b> ${escapeHtml(meeting.meetingDate || meeting.createdAt || "Não informada")} &nbsp; <b>Hora:</b> ${escapeHtml(meeting.meetingTime || "Não informada")}</p><p><b>Setor/local:</b> ${escapeHtml(meeting.department || "Não informado")}</p>${body}<hr><p><small>Gerado pelo KeyNotesAI · INOVALAB</small></p></body></html>`;
 }
@@ -97,7 +113,10 @@ export async function archiveMeetingInDrive(meeting: DriveMeeting, audio?: File 
   const root = DRIVE_ROOT_FOLDER_ID;
   const token = await getDriveAccessToken();
   const folderName = `${folderDate(meeting.meetingDate || meeting.createdAt)} : ${folderTime(meeting.meetingTime)} - ${safeName(meeting.name)}`;
-  const folder = await createFolder(token, folderName, root);
+  const existingFolderId = folderIdFromMeeting(meeting);
+  const folder = existingFolderId
+    ? { id: existingFolderId, name: folderName, mimeType: "application/vnd.google-apps.folder", webViewLink: `https://drive.google.com/drive/folders/${existingFolderId}` }
+    : await createFolder(token, folderName, root);
   const generated = await Promise.all(documents(meeting).map((doc) => upload(token, folder.id, doc.name, new Blob([doc.html], { type: "text/html;charset=utf-8" }), GOOGLE_DOC_MIME)));
   const files = [...generated];
   if (audio?.size) files.push(await upload(token, folder.id, `00 - Gravação - ${safeName(meeting.name)}.${audio.type.includes("mpeg") ? "mp3" : audio.type.includes("mp4") ? "m4a" : "webm"}`, audio));
@@ -105,5 +124,7 @@ export async function archiveMeetingInDrive(meeting: DriveMeeting, audio?: File 
     const extension = photo.type.includes("png") ? "png" : photo.type.includes("webp") ? "webp" : photo.type.includes("heic") ? "heic" : "jpg";
     files.push(await upload(token, folder.id, `06 - Foto da reunião - ${safeName(meeting.name)}.${extension}`, photo));
   }
+  if (existingFolderId && meeting.driveFiles?.length)
+    await Promise.all(meeting.driveFiles.map((file) => trashFile(token, file.id)));
   return { folder, files };
 }
