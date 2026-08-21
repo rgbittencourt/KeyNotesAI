@@ -1,145 +1,1440 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import {type MeetingAction,type MeetingDecision} from "./local-processing";
+import { type MeetingAction, type MeetingDecision } from "./local-processing";
 import RealFeatureView from "./real-feature-view";
+import AdminPanel from "./admin-panel";
+type SessionUser = {
+  email: string;
+  name: string;
+  role: "admin" | "user";
+  monthlyLimit: number;
+  used: number;
+};
 
-export type DeviceRecording = { id: number; name: string; createdAt: string; duration: string; size: string; url: string; meetingDate?:string; meetingTime?:string; participants?:string; department?:string; agenda?:string; transcript?:string; summary?:string; themes?:string[]; minutes?:string; actions?:MeetingAction[]; decisions?:MeetingDecision[]; documentOverrides?:Partial<Record<"ata"|"resumo"|"acoes"|"decisoes",string>>; processedAt?:string; processingMode?:"semantic"|"local"; transcriptionMode?:"hybrid"|"openai" };
-type ScheduledMeeting = { id: number; title: string; date: string; time: string };
+export type DeviceRecording = {
+  id: number;
+  name: string;
+  createdAt: string;
+  duration: string;
+  size: string;
+  url: string;
+  meetingDate?: string;
+  meetingTime?: string;
+  participants?: string;
+  department?: string;
+  agenda?: string;
+  transcript?: string;
+  summary?: string;
+  themes?: string[];
+  minutes?: string;
+  actions?: MeetingAction[];
+  decisions?: MeetingDecision[];
+  documentOverrides?: Partial<
+    Record<"ata" | "resumo" | "acoes" | "decisoes", string>
+  >;
+  processedAt?: string;
+  processingMode?: "semantic" | "local";
+  transcriptionMode?: "hybrid" | "openai";
+};
+type ScheduledMeeting = {
+  id: number;
+  title: string;
+  date: string;
+  time: string;
+};
 
-function openRecordingsDb(): Promise<IDBDatabase> { return new Promise((resolve,reject)=>{ const req=indexedDB.open("keynotesai-local",1); req.onupgradeneeded=()=>req.result.createObjectStore("recordings",{keyPath:"id"}); req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error); }); }
-async function persistRecording(record: Omit<DeviceRecording,"url"> & { blob: Blob }) { const db=await openRecordingsDb(); const tx=db.transaction("recordings","readwrite"); tx.objectStore("recordings").put(record); }
-async function patchRecording(id:number,patch:Partial<DeviceRecording>){const db=await openRecordingsDb();return new Promise<void>((resolve,reject)=>{const tx=db.transaction("recordings","readwrite"),store=tx.objectStore("recordings"),get=store.get(id);get.onsuccess=()=>{store.put({...get.result,...patch,id});};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});}
-async function removeRecording(id:number){const db=await openRecordingsDb();return new Promise<void>((resolve,reject)=>{const tx=db.transaction("recordings","readwrite");tx.objectStore("recordings").delete(id);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)})}
-async function loadRecordings(): Promise<DeviceRecording[]> { const db=await openRecordingsDb(); return new Promise((resolve,reject)=>{ const req=db.transaction("recordings").objectStore("recordings").getAll(); req.onsuccess=()=>resolve(req.result.map((r)=>({...r,url:URL.createObjectURL(r.blob)})).reverse()); req.onerror=()=>reject(req.error); }); }
+function openRecordingsDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("keynotesai-local", 1);
+    req.onupgradeneeded = () =>
+      req.result.createObjectStore("recordings", { keyPath: "id" });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function persistRecording(
+  record: Omit<DeviceRecording, "url"> & { blob: Blob },
+) {
+  const db = await openRecordingsDb();
+  const tx = db.transaction("recordings", "readwrite");
+  tx.objectStore("recordings").put(record);
+}
+async function patchRecording(id: number, patch: Partial<DeviceRecording>) {
+  const db = await openRecordingsDb();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("recordings", "readwrite"),
+      store = tx.objectStore("recordings"),
+      get = store.get(id);
+    get.onsuccess = () => {
+      store.put({ ...get.result, ...patch, id });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function removeRecording(id: number) {
+  const db = await openRecordingsDb();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("recordings", "readwrite");
+    tx.objectStore("recordings").delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function loadRecordings(): Promise<DeviceRecording[]> {
+  const db = await openRecordingsDb();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction("recordings").objectStore("recordings").getAll();
+    req.onsuccess = () =>
+      resolve(
+        req.result
+          .map((r) => ({ ...r, url: URL.createObjectURL(r.blob) }))
+          .reverse(),
+      );
+    req.onerror = () => reject(req.error);
+  });
+}
 
 const meetings = [
-  { time: "09:00", title: "Planejamento • Sprint 18", meta: "Produto · 8 participantes", tone: "live", label: "Em 12 min" },
-  { time: "14:30", title: "Alinhamento com INOVALAB", meta: "Parcerias · 5 participantes", tone: "soon", label: "Hoje" },
-  { time: "16:00", title: "Revisão da experiência PWA", meta: "Design · 4 participantes", tone: "later", label: "Hoje" },
+  {
+    time: "09:00",
+    title: "Planejamento • Sprint 18",
+    meta: "Produto · 8 participantes",
+    tone: "live",
+    label: "Em 12 min",
+  },
+  {
+    time: "14:30",
+    title: "Alinhamento com INOVALAB",
+    meta: "Parcerias · 5 participantes",
+    tone: "soon",
+    label: "Hoje",
+  },
+  {
+    time: "16:00",
+    title: "Revisão da experiência PWA",
+    meta: "Design · 4 participantes",
+    tone: "later",
+    label: "Hoje",
+  },
 ];
 const actions = [
-  { task: "Validar fluxo de onboarding", person: "Ana Lima", initials: "AL", due: "22 ago", priority: "Alta" },
-  { task: "Publicar protótipo navegável", person: "Rafael Melo", initials: "RM", due: "25 ago", priority: "Média" },
-  { task: "Revisar integração com Trello", person: "João Silva", initials: "JS", due: "28 ago", priority: "Baixa" },
+  {
+    task: "Validar fluxo de onboarding",
+    person: "Ana Lima",
+    initials: "AL",
+    due: "22 ago",
+    priority: "Alta",
+  },
+  {
+    task: "Publicar protótipo navegável",
+    person: "Rafael Melo",
+    initials: "RM",
+    due: "25 ago",
+    priority: "Média",
+  },
+  {
+    task: "Revisar integração com Trello",
+    person: "João Silva",
+    initials: "JS",
+    due: "28 ago",
+    priority: "Baixa",
+  },
 ];
 const recent = [
-  { title: "Kick-off • KeyNotesAI", date: "Ontem, 15:00", duration: "48 min", tag: "Produto", color: "#b98b4e" },
-  { title: "Descoberta com usuários", date: "18 ago, 10:30", duration: "1h 12 min", tag: "Pesquisa", color: "#3f765e" },
-  { title: "Checkpoint técnico", date: "16 ago, 16:00", duration: "36 min", tag: "Tecnologia", color: "#637183" },
+  {
+    title: "Kick-off • KeyNotesAI",
+    date: "Ontem, 15:00",
+    duration: "48 min",
+    tag: "Produto",
+    color: "#b98b4e",
+  },
+  {
+    title: "Descoberta com usuários",
+    date: "18 ago, 10:30",
+    duration: "1h 12 min",
+    tag: "Pesquisa",
+    color: "#3f765e",
+  },
+  {
+    title: "Checkpoint técnico",
+    date: "16 ago, 16:00",
+    duration: "36 min",
+    tag: "Tecnologia",
+    color: "#637183",
+  },
 ];
 
-function FeatureView({ active, notify, recordings, recording, recordingSeconds, stopRecording }: { active: string; notify: (message: string) => void; recordings: DeviceRecording[]; recording: boolean; recordingSeconds: number; stopRecording: () => void }) {
+function FeatureView({
+  active,
+  notify,
+  recordings,
+  recording,
+  recordingSeconds,
+  stopRecording,
+}: {
+  active: string;
+  notify: (message: string) => void;
+  recordings: DeviceRecording[];
+  recording: boolean;
+  recordingSeconds: number;
+  stopRecording: () => void;
+}) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [catchUp, setCatchUp] = useState(false);
   const [synced, setSynced] = useState(false);
-  const [selectedRecordingId, setSelectedRecordingId] = useState<number|null>(null);
-  const ask = () => { if (!question.trim()) return; setAnswer("Sim. O cliente aprovou o orçamento de R$ 48 mil, condicionado ao envio do cronograma revisado até 22 de agosto. A decisão foi registrada aos 32:14."); setQuestion(""); };
-  const downloadDocument = (name: string, content: string) => { const url=URL.createObjectURL(new Blob([content],{type:"text/plain;charset=utf-8"})); const a=document.createElement("a"); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url); notify("Documento baixado"); };
+  const [selectedRecordingId, setSelectedRecordingId] = useState<number | null>(
+    null,
+  );
+  const ask = () => {
+    if (!question.trim()) return;
+    setAnswer(
+      "Sim. O cliente aprovou o orçamento de R$ 48 mil, condicionado ao envio do cronograma revisado até 22 de agosto. A decisão foi registrada aos 32:14.",
+    );
+    setQuestion("");
+  };
+  const downloadDocument = (name: string, content: string) => {
+    const url = URL.createObjectURL(
+      new Blob([content], { type: "text/plain;charset=utf-8" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify("Documento baixado");
+  };
 
-  if (active === "Arquivos") { const selected=recordings.find(r=>r.id===(selectedRecordingId??recordings[0]?.id)); return <section className="feature-page"><div className="feature-title"><div><p className="eyebrow">BIBLIOTECA DA REUNIÃO</p><h1>Gravações e documentos</h1><p>Cada gravação possui seu próprio conjunto de documentos e estado de processamento.</p></div></div><div className="library-grid"><article className="card library-card"><div className="card-head"><div><p className="eyebrow">REUNIÕES NO APARELHO</p><h2>Gravações</h2></div><span>{recordings.length} reunião(ões)</span></div>{recordings.length===0?<div className="empty-library"><span>◉</span><strong>Nenhuma gravação local</strong><p>Use “Gravar nova reunião” na Visão geral e permita o acesso ao microfone.</p></div>:recordings.map(r=><div className={`recording-row ${selected?.id===r.id?'selected':''}`} key={r.id} onClick={()=>setSelectedRecordingId(r.id)}><span>▶</span><div><strong>{r.name}</strong><small>{r.createdAt} · {r.duration} · {r.size}</small><audio controls src={r.url} onClick={e=>e.stopPropagation()}/></div><a href={r.url} download={`${r.name}.webm`} onClick={e=>e.stopPropagation()}>↓ Baixar</a></div>)}</article><article className="card library-card"><div className="card-head"><div><p className="eyebrow">DOCUMENTOS DA REUNIÃO</p><h2>{selected?.name??"Selecione uma reunião"}</h2></div>{selected&&<span className="processing-badge">Aguardando IA</span>}</div>{!selected?<div className="empty-library"><span>☷</span><strong>Nenhuma reunião selecionada</strong><p>Grave ou importe um áudio para iniciar.</p></div>:<><div className="processing-note"><span>◷</span><div><strong>Áudio registrado com sucesso</strong><p>A transcrição e a geração automática dependem da conexão com o serviço de IA. Nenhum conteúdo demonstrativo será misturado à sua reunião.</p></div></div>{[['Ata da reunião','Resumo, participantes, pauta e encaminhamentos'],['Resumo executivo','Leitura rápida para gestores'],['Matriz de ações','Responsáveis, prazos e prioridades'],['Decisões e bloqueios','Registro consolidado das definições']].map(d=><div className="document-row pending-doc" key={d[0]}><span>☷</span><div><strong>{d[0]}</strong><small>{d[1]}</small></div><em>Aguardando transcrição</em></div>)}</>}</article></div></section>; }
+  if (active === "Arquivos") {
+    const selected = recordings.find(
+      (r) => r.id === (selectedRecordingId ?? recordings[0]?.id),
+    );
+    return (
+      <section className="feature-page">
+        <div className="feature-title">
+          <div>
+            <p className="eyebrow">BIBLIOTECA DA REUNIÃO</p>
+            <h1>Gravações e documentos</h1>
+            <p>
+              Cada gravação possui seu próprio conjunto de documentos e estado
+              de processamento.
+            </p>
+          </div>
+        </div>
+        <div className="library-grid">
+          <article className="card library-card">
+            <div className="card-head">
+              <div>
+                <p className="eyebrow">REUNIÕES NO APARELHO</p>
+                <h2>Gravações</h2>
+              </div>
+              <span>{recordings.length} reunião(ões)</span>
+            </div>
+            {recordings.length === 0 ? (
+              <div className="empty-library">
+                <span>◉</span>
+                <strong>Nenhuma gravação local</strong>
+                <p>
+                  Use “Gravar nova reunião” na Visão geral e permita o acesso ao
+                  microfone.
+                </p>
+              </div>
+            ) : (
+              recordings.map((r) => (
+                <div
+                  className={`recording-row ${selected?.id === r.id ? "selected" : ""}`}
+                  key={r.id}
+                  onClick={() => setSelectedRecordingId(r.id)}
+                >
+                  <span>▶</span>
+                  <div>
+                    <strong>{r.name}</strong>
+                    <small>
+                      {r.createdAt} · {r.duration} · {r.size}
+                    </small>
+                    <audio
+                      controls
+                      src={r.url}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <a
+                    href={r.url}
+                    download={`${r.name}.webm`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    ↓ Baixar
+                  </a>
+                </div>
+              ))
+            )}
+          </article>
+          <article className="card library-card">
+            <div className="card-head">
+              <div>
+                <p className="eyebrow">DOCUMENTOS DA REUNIÃO</p>
+                <h2>{selected?.name ?? "Selecione uma reunião"}</h2>
+              </div>
+              {selected && (
+                <span className="processing-badge">Aguardando IA</span>
+              )}
+            </div>
+            {!selected ? (
+              <div className="empty-library">
+                <span>☷</span>
+                <strong>Nenhuma reunião selecionada</strong>
+                <p>Grave ou importe um áudio para iniciar.</p>
+              </div>
+            ) : (
+              <>
+                <div className="processing-note">
+                  <span>◷</span>
+                  <div>
+                    <strong>Áudio registrado com sucesso</strong>
+                    <p>
+                      A transcrição e a geração automática dependem da conexão
+                      com o serviço de IA. Nenhum conteúdo demonstrativo será
+                      misturado à sua reunião.
+                    </p>
+                  </div>
+                </div>
+                {[
+                  [
+                    "Ata da reunião",
+                    "Resumo, participantes, pauta e encaminhamentos",
+                  ],
+                  ["Resumo executivo", "Leitura rápida para gestores"],
+                  ["Matriz de ações", "Responsáveis, prazos e prioridades"],
+                  [
+                    "Decisões e bloqueios",
+                    "Registro consolidado das definições",
+                  ],
+                ].map((d) => (
+                  <div className="document-row pending-doc" key={d[0]}>
+                    <span>☷</span>
+                    <div>
+                      <strong>{d[0]}</strong>
+                      <small>{d[1]}</small>
+                    </div>
+                    <em>Aguardando transcrição</em>
+                  </div>
+                ))}
+              </>
+            )}
+          </article>
+        </div>
+      </section>
+    );
+  }
 
-  if (active === "Reuniões") return <section className="feature-page">{recording?<><div className="feature-title"><div><p className="eyebrow">SUA REUNIÃO EM ANDAMENTO</p><h1>Nova reunião</h1><p>Gravação iniciada neste aparelho · áudio salvo localmente</p></div><div className="live-pill"><i /> AO VIVO · {String(Math.floor(recordingSeconds/60)).padStart(2,'0')}:{String(recordingSeconds%60).padStart(2,'0')}</div></div><div className="active-meeting-grid"><article className="card active-capture"><div className="capture-orbit"><span>●</span></div><p className="eyebrow">CAPTURA DE ÁUDIO</p><h2>Gravação em andamento</h2><strong>{String(Math.floor(recordingSeconds/60)).padStart(2,'0')}:{String(recordingSeconds%60).padStart(2,'0')}</strong><div className="capture-bars">{[1,2,3,4,5,6,7,8,9,10,11,12].map(n=><i key={n}/>)}</div><p>Mantenha esta página aberta. Ao encerrar, a reunião será registrada no dashboard e o áudio aparecerá em Arquivos.</p><button onClick={stopRecording}><i/> Encerrar e salvar reunião</button></article><article className="card meeting-live-status"><p className="eyebrow">PROCESSAMENTO DA REUNIÃO</p><h2>O que acontecerá depois</h2>{[['1','Áudio','Sendo capturado agora'],['2','Reunião','Será adicionada ao histórico'],['3','Transcrição','Aguardará conexão com a IA'],['4','Documentos','Serão associados somente a esta reunião']].map((x,i)=><div className={i===0?'current':''} key={x[0]}><span>{i===0?'●':x[0]}</span><p><strong>{x[1]}</strong><small>{x[2]}</small></p></div>)}</article></div></>:<div className="no-live-meeting card"><span>◉</span><p className="eyebrow">NENHUMA REUNIÃO EM ANDAMENTO</p><h1>Comece pela Visão geral</h1><p>Ao iniciar uma gravação, esta área mostrará somente a sua reunião real, o tempo decorrido e o estado do processamento.</p></div>}</section>;
+  if (active === "Reuniões")
+    return (
+      <section className="feature-page">
+        {recording ? (
+          <>
+            <div className="feature-title">
+              <div>
+                <p className="eyebrow">SUA REUNIÃO EM ANDAMENTO</p>
+                <h1>Nova reunião</h1>
+                <p>Gravação iniciada neste aparelho · áudio salvo localmente</p>
+              </div>
+              <div className="live-pill">
+                <i /> AO VIVO ·{" "}
+                {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
+                {String(recordingSeconds % 60).padStart(2, "0")}
+              </div>
+            </div>
+            <div className="active-meeting-grid">
+              <article className="card active-capture">
+                <div className="capture-orbit">
+                  <span>●</span>
+                </div>
+                <p className="eyebrow">CAPTURA DE ÁUDIO</p>
+                <h2>Gravação em andamento</h2>
+                <strong>
+                  {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
+                  {String(recordingSeconds % 60).padStart(2, "0")}
+                </strong>
+                <div className="capture-bars">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                    <i key={n} />
+                  ))}
+                </div>
+                <p>
+                  Mantenha esta página aberta. Ao encerrar, a reunião será
+                  registrada no dashboard e o áudio aparecerá em Arquivos.
+                </p>
+                <button onClick={stopRecording}>
+                  <i /> Encerrar e salvar reunião
+                </button>
+              </article>
+              <article className="card meeting-live-status">
+                <p className="eyebrow">PROCESSAMENTO DA REUNIÃO</p>
+                <h2>O que acontecerá depois</h2>
+                {[
+                  ["1", "Áudio", "Sendo capturado agora"],
+                  ["2", "Reunião", "Será adicionada ao histórico"],
+                  ["3", "Transcrição", "Aguardará conexão com a IA"],
+                  [
+                    "4",
+                    "Documentos",
+                    "Serão associados somente a esta reunião",
+                  ],
+                ].map((x, i) => (
+                  <div className={i === 0 ? "current" : ""} key={x[0]}>
+                    <span>{i === 0 ? "●" : x[0]}</span>
+                    <p>
+                      <strong>{x[1]}</strong>
+                      <small>{x[2]}</small>
+                    </p>
+                  </div>
+                ))}
+              </article>
+            </div>
+          </>
+        ) : (
+          <div className="no-live-meeting card">
+            <span>◉</span>
+            <p className="eyebrow">NENHUMA REUNIÃO EM ANDAMENTO</p>
+            <h1>Comece pela Visão geral</h1>
+            <p>
+              Ao iniciar uma gravação, esta área mostrará somente a sua reunião
+              real, o tempo decorrido e o estado do processamento.
+            </p>
+          </div>
+        )}
+      </section>
+    );
 
-  if (active === "Ações") return <section className="feature-page"><div className="feature-title"><div><p className="eyebrow">ACTION MATRIX</p><h1>Ações e prazos</h1><p>Responsabilidades extraídas automaticamente das reuniões.</p></div><button className="primary-btn" onClick={()=>{setSynced(true);notify("Ações exportadas para o Trello")}}>{synced?'✓ Sincronizado':'Exportar para o Trello'}</button></div><article className="card matrix-full"><div className="matrix-head"><span>AÇÃO</span><span>RESPONSÁVEL</span><span>REUNIÃO</span><span>PRAZO</span><span>PRIORIDADE</span></div>{actions.concat([{task:'Enviar cronograma revisado',person:'Marina Costa',initials:'MC',due:'22 ago',priority:'Alta'}]).map((a,i)=><div className="matrix-row" key={a.task}><button aria-label="Concluir" onClick={()=>notify('Ação concluída')}/><strong>{a.task}</strong><span className="person-chip"><i>{a.initials}</i>{a.person}</span><span>{i===3?'Reunião com cliente':'Planejamento • Sprint 18'}</span><time>{a.due}</time><em className={a.priority.toLowerCase().replace('mé','me')}>{a.priority}</em></div>)}</article></section>;
+  if (active === "Ações")
+    return (
+      <section className="feature-page">
+        <div className="feature-title">
+          <div>
+            <p className="eyebrow">ACTION MATRIX</p>
+            <h1>Ações e prazos</h1>
+            <p>Responsabilidades extraídas automaticamente das reuniões.</p>
+          </div>
+          <button
+            className="primary-btn"
+            onClick={() => {
+              setSynced(true);
+              notify("Ações exportadas para o Trello");
+            }}
+          >
+            {synced ? "✓ Sincronizado" : "Exportar para o Trello"}
+          </button>
+        </div>
+        <article className="card matrix-full">
+          <div className="matrix-head">
+            <span>AÇÃO</span>
+            <span>RESPONSÁVEL</span>
+            <span>REUNIÃO</span>
+            <span>PRAZO</span>
+            <span>PRIORIDADE</span>
+          </div>
+          {actions
+            .concat([
+              {
+                task: "Enviar cronograma revisado",
+                person: "Marina Costa",
+                initials: "MC",
+                due: "22 ago",
+                priority: "Alta",
+              },
+            ])
+            .map((a, i) => (
+              <div className="matrix-row" key={a.task}>
+                <button
+                  aria-label="Concluir"
+                  onClick={() => notify("Ação concluída")}
+                />
+                <strong>{a.task}</strong>
+                <span className="person-chip">
+                  <i>{a.initials}</i>
+                  {a.person}
+                </span>
+                <span>
+                  {i === 3 ? "Reunião com cliente" : "Planejamento • Sprint 18"}
+                </span>
+                <time>{a.due}</time>
+                <em className={a.priority.toLowerCase().replace("mé", "me")}>
+                  {a.priority}
+                </em>
+              </div>
+            ))}
+        </article>
+      </section>
+    );
 
-  if (active === "Decisões") return <section className="feature-page"><div className="feature-title"><div><p className="eyebrow">DECISION & BLOCKERS LOG</p><h1>Decisões e bloqueios</h1><p>Clareza executiva sem precisar reler toda a transcrição.</p></div><button className="ghost-btn" onClick={()=>notify('Relatório copiado')}>Copiar relatório</button></div><div className="decision-grid"><article className="card decision-column accepted"><div className="decision-heading"><span>✓</span><div><small>3 REGISTROS</small><h2>Decisões tomadas</h2></div></div><div><strong>Priorizar o novo onboarding</strong><p>A equipe aprovou a nova experiência como principal entrega da Sprint 18.</p><small>Planejamento · hoje, 09:18</small></div><div><strong>Orçamento aprovado</strong><p>O cliente aprovou R$ 48 mil mediante cronograma atualizado.</p><small>Reunião com cliente · ontem</small></div></article><article className="card decision-column pending"><div className="decision-heading"><span>?</span><div><small>2 REGISTROS</small><h2>Pontos pendentes</h2></div></div><div><strong>Definir ferramenta de analytics</strong><p>Amplitude e PostHog permanecem em avaliação.</p><small>Responsável: Ana Lima</small></div><div><strong>Confirmar data do piloto</strong><p>Depende da disponibilidade de cinco usuários.</p><small>Prazo: 25 de agosto</small></div></article><article className="card decision-column blocked"><div className="decision-heading"><span>!</span><div><small>1 REGISTRO</small><h2>Objeções e bloqueios</h2></div></div><div><strong>Autenticação do Trello</strong><p>O ambiente de homologação ainda aguarda credenciais administrativas.</p><small>Impacto: integração bloqueada</small></div></article></div></section>;
+  if (active === "Decisões")
+    return (
+      <section className="feature-page">
+        <div className="feature-title">
+          <div>
+            <p className="eyebrow">DECISION & BLOCKERS LOG</p>
+            <h1>Decisões e bloqueios</h1>
+            <p>Clareza executiva sem precisar reler toda a transcrição.</p>
+          </div>
+          <button
+            className="ghost-btn"
+            onClick={() => notify("Relatório copiado")}
+          >
+            Copiar relatório
+          </button>
+        </div>
+        <div className="decision-grid">
+          <article className="card decision-column accepted">
+            <div className="decision-heading">
+              <span>✓</span>
+              <div>
+                <small>3 REGISTROS</small>
+                <h2>Decisões tomadas</h2>
+              </div>
+            </div>
+            <div>
+              <strong>Priorizar o novo onboarding</strong>
+              <p>
+                A equipe aprovou a nova experiência como principal entrega da
+                Sprint 18.
+              </p>
+              <small>Planejamento · hoje, 09:18</small>
+            </div>
+            <div>
+              <strong>Orçamento aprovado</strong>
+              <p>O cliente aprovou R$ 48 mil mediante cronograma atualizado.</p>
+              <small>Reunião com cliente · ontem</small>
+            </div>
+          </article>
+          <article className="card decision-column pending">
+            <div className="decision-heading">
+              <span>?</span>
+              <div>
+                <small>2 REGISTROS</small>
+                <h2>Pontos pendentes</h2>
+              </div>
+            </div>
+            <div>
+              <strong>Definir ferramenta de analytics</strong>
+              <p>Amplitude e PostHog permanecem em avaliação.</p>
+              <small>Responsável: Ana Lima</small>
+            </div>
+            <div>
+              <strong>Confirmar data do piloto</strong>
+              <p>Depende da disponibilidade de cinco usuários.</p>
+              <small>Prazo: 25 de agosto</small>
+            </div>
+          </article>
+          <article className="card decision-column blocked">
+            <div className="decision-heading">
+              <span>!</span>
+              <div>
+                <small>1 REGISTRO</small>
+                <h2>Objeções e bloqueios</h2>
+              </div>
+            </div>
+            <div>
+              <strong>Autenticação do Trello</strong>
+              <p>
+                O ambiente de homologação ainda aguarda credenciais
+                administrativas.
+              </p>
+              <small>Impacto: integração bloqueada</small>
+            </div>
+          </article>
+        </div>
+      </section>
+    );
 
-  return <section className="feature-page qa-page"><div className="feature-title"><div><p className="eyebrow">PERGUNTE À REUNIÃO</p><h1>Converse com seu histórico.</h1><p>Respostas fundamentadas nas transcrições, atas e decisões.</p></div></div><div className="qa-grid"><aside className="card meeting-picker"><label>REUNIÃO SELECIONADA</label><button><span className="doc">☷</span><div><strong>Kick-off • KeyNotesAI</strong><small>Ontem · 48 min</small></div><b>⌄</b></button><p>SUGESTÕES</p>{['Quais decisões foram tomadas?','Quem ficou responsável por cada ação?','Quais são os principais riscos?'].map(x=><button className="suggestion" key={x} onClick={()=>setQuestion(x)}>{x}</button>)}</aside><article className="card chat-panel"><div className="chat-empty"><span>✦</span><h2>Pergunte qualquer coisa</h2><p>Eu encontro a resposta e mostro exatamente onde ela apareceu na reunião.</p></div>{answer&&<div className="ai-answer"><span>✦</span><div><p>{answer}</p><button onClick={()=>notify('Trecho da transcrição aberto')}>Ver trecho · 32:14 →</button></div></div>}<div className="ask-box"><input value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} placeholder="Ex.: O cliente aprovou o orçamento?" aria-label="Pergunta"/><button onClick={ask} aria-label="Enviar pergunta">↑</button></div></article></div></section>;
+  return (
+    <section className="feature-page qa-page">
+      <div className="feature-title">
+        <div>
+          <p className="eyebrow">PERGUNTE À REUNIÃO</p>
+          <h1>Converse com seu histórico.</h1>
+          <p>Respostas fundamentadas nas transcrições, atas e decisões.</p>
+        </div>
+      </div>
+      <div className="qa-grid">
+        <aside className="card meeting-picker">
+          <label>REUNIÃO SELECIONADA</label>
+          <button>
+            <span className="doc">☷</span>
+            <div>
+              <strong>Kick-off • KeyNotesAI</strong>
+              <small>Ontem · 48 min</small>
+            </div>
+            <b>⌄</b>
+          </button>
+          <p>SUGESTÕES</p>
+          {[
+            "Quais decisões foram tomadas?",
+            "Quem ficou responsável por cada ação?",
+            "Quais são os principais riscos?",
+          ].map((x) => (
+            <button
+              className="suggestion"
+              key={x}
+              onClick={() => setQuestion(x)}
+            >
+              {x}
+            </button>
+          ))}
+        </aside>
+        <article className="card chat-panel">
+          <div className="chat-empty">
+            <span>✦</span>
+            <h2>Pergunte qualquer coisa</h2>
+            <p>
+              Eu encontro a resposta e mostro exatamente onde ela apareceu na
+              reunião.
+            </p>
+          </div>
+          {answer && (
+            <div className="ai-answer">
+              <span>✦</span>
+              <div>
+                <p>{answer}</p>
+                <button onClick={() => notify("Trecho da transcrição aberto")}>
+                  Ver trecho · 32:14 →
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="ask-box">
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && ask()}
+              placeholder="Ex.: O cliente aprovou o orçamento?"
+              aria-label="Pergunta"
+            />
+            <button onClick={ask} aria-label="Enviar pergunta">
+              ↑
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+  );
 }
 
 export default function Home() {
-  const [loggedIn, setLoggedIn] = useState(false);
+  const [session, setSession] = useState<SessionUser | null | undefined>(
+    undefined,
+  );
   const [active, setActive] = useState("Visão geral");
   const [recording, setRecording] = useState(false);
   const [requestingMic, setRequestingMic] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [deviceRecordings, setDeviceRecordings] = useState<DeviceRecording[]>([]);
-  const recorderRef = useRef<MediaRecorder|null>(null);
-  const streamRef = useRef<MediaStream|null>(null);
+  const [deviceRecordings, setDeviceRecordings] = useState<DeviceRecording[]>(
+    [],
+  );
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
   const participantsRef = useRef<string[]>([]);
-  const audioImportRef = useRef<HTMLInputElement|null>(null);
+  const audioImportRef = useRef<HTMLInputElement | null>(null);
   const [recordingIssue, setRecordingIssue] = useState("");
   const [toast, setToast] = useState("");
-  const [headerPanel, setHeaderPanel] = useState<"help"|"notifications"|"profile"|null>(null);
+  const [headerPanel, setHeaderPanel] = useState<
+    "help" | "notifications" | "profile" | null
+  >(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [scheduledMeetings, setScheduledMeetings] = useState<ScheduledMeeting[]>([]);
+  const [scheduledMeetings, setScheduledMeetings] = useState<
+    ScheduledMeeting[]
+  >([]);
   const [showScheduleForm, setShowScheduleForm] = useState(false);
   const [meetingTitle, setMeetingTitle] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
   const [meetingTime, setMeetingTime] = useState("");
   const [meetingTitleNow, setMeetingTitleNow] = useState("");
-  const [newMeetingTranscriptionMode,setNewMeetingTranscriptionMode]=useState<"hybrid"|"openai">("hybrid");
-  const [liveParticipants,setLiveParticipants]=useState<string[]>([]);
-  const [listeningParticipant,setListeningParticipant]=useState(false);
-  function notify(message: string) { setToast(message); window.setTimeout(() => setToast(""), 2600); }
-  function registerParticipant(name:string){const clean=name.replace(/^(meu nome [eé]|eu sou|sou o|sou a)\s+/i,"").replace(/\s+(e estou presente|presente)$/i,"").trim();if(!clean)return;const next=[...participantsRef.current];if(!next.some(x=>x.toLocaleLowerCase()===clean.toLocaleLowerCase()))next.push(clean);participantsRef.current=next;setLiveParticipants(next);notify(`${clean} registrado(a) na presença`)}
-  function captureParticipant(){const SpeechRecognition=(window as unknown as {SpeechRecognition?:new()=>any;webkitSpeechRecognition?:new()=>any}).SpeechRecognition||(window as unknown as {webkitSpeechRecognition?:new()=>any}).webkitSpeechRecognition;if(!SpeechRecognition){notify("Reconhecimento de nomes indisponível; digite o nome manualmente");return}const recognition=new SpeechRecognition();recognition.lang="pt-BR";recognition.interimResults=false;recognition.maxAlternatives=1;setListeningParticipant(true);recognition.onresult=(event:any)=>registerParticipant(event.results[0][0].transcript);recognition.onerror=()=>notify("Não entendi o nome. Tente novamente ou digite manualmente");recognition.onend=()=>setListeningParticipant(false);recognition.start()}
-  function runSearch(){ const q=searchTerm.toLowerCase(); if(q.includes("ata")||q.includes("arquivo")||q.includes("grava"))setActive("Arquivos"); else if(q.includes("aç")||q.includes("tarefa"))setActive("Ações"); else if(q.includes("decis")||q.includes("bloque"))setActive("Decisões"); else if(q.includes("pergunta")||q.includes("cliente"))setActive("Pergunte à IA"); else setActive("Reuniões"); setHeaderPanel(null); }
-  useEffect(()=>{ loadRecordings().then(setDeviceRecordings).catch(()=>{}); return()=>deviceRecordings.forEach(r=>URL.revokeObjectURL(r.url)); },[]);
-  useEffect(()=>{ try{setScheduledMeetings(JSON.parse(localStorage.getItem("keynotesai-meetings")||"[]"))}catch{} },[]);
-  useEffect(()=>{ if(!recording)return; const timer=window.setInterval(()=>setRecordingSeconds(Math.floor((Date.now()-startedAtRef.current)/1000)),1000); return()=>window.clearInterval(timer); },[recording]);
-  async function toggleRecording(){
-    if(recording){ recorderRef.current?.stop(); streamRef.current?.getTracks().forEach(t=>t.stop()); setRecording(false); return; }
-    if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined"){
-      setRecordingIssue("Este navegador não oferece gravação direta. Abra o endereço no Chrome completo ou importe um áudio já gravado.");
+  const [newMeetingTranscriptionMode, setNewMeetingTranscriptionMode] =
+    useState<"hybrid" | "openai">("hybrid");
+  const [liveParticipants, setLiveParticipants] = useState<string[]>([]);
+  const [listeningParticipant, setListeningParticipant] = useState(false);
+  useEffect(() => {
+    fetch("/api/session")
+      .then(async (r) => (r.ok ? (await r.json()).user : null))
+      .then(setSession)
+      .catch(() => setSession(null));
+  }, []);
+  function notify(message: string) {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 2600);
+  }
+  function registerParticipant(name: string) {
+    const clean = name
+      .replace(/^(meu nome [eé]|eu sou|sou o|sou a)\s+/i, "")
+      .replace(/\s+(e estou presente|presente)$/i, "")
+      .trim();
+    if (!clean) return;
+    const next = [...participantsRef.current];
+    if (!next.some((x) => x.toLocaleLowerCase() === clean.toLocaleLowerCase()))
+      next.push(clean);
+    participantsRef.current = next;
+    setLiveParticipants(next);
+    notify(`${clean} registrado(a) na presença`);
+  }
+  function captureParticipant() {
+    const SpeechRecognition =
+      (
+        window as unknown as {
+          SpeechRecognition?: new () => any;
+          webkitSpeechRecognition?: new () => any;
+        }
+      ).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => any })
+        .webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      notify("Reconhecimento de nomes indisponível; digite o nome manualmente");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "pt-BR";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    setListeningParticipant(true);
+    recognition.onresult = (event: any) =>
+      registerParticipant(event.results[0][0].transcript);
+    recognition.onerror = () =>
+      notify("Não entendi o nome. Tente novamente ou digite manualmente");
+    recognition.onend = () => setListeningParticipant(false);
+    recognition.start();
+  }
+  function runSearch() {
+    const q = searchTerm.toLowerCase();
+    if (q.includes("ata") || q.includes("arquivo") || q.includes("grava"))
+      setActive("Arquivos");
+    else if (q.includes("aç") || q.includes("tarefa")) setActive("Ações");
+    else if (q.includes("decis") || q.includes("bloque")) setActive("Decisões");
+    else if (q.includes("pergunta") || q.includes("cliente"))
+      setActive("Pergunte à IA");
+    else setActive("Reuniões");
+    setHeaderPanel(null);
+  }
+  useEffect(() => {
+    loadRecordings()
+      .then(setDeviceRecordings)
+      .catch(() => {});
+    return () => deviceRecordings.forEach((r) => URL.revokeObjectURL(r.url));
+  }, []);
+  useEffect(() => {
+    try {
+      setScheduledMeetings(
+        JSON.parse(localStorage.getItem("keynotesai-meetings") || "[]"),
+      );
+    } catch {}
+  }, []);
+  useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(
+      () =>
+        setRecordingSeconds(
+          Math.floor((Date.now() - startedAtRef.current) / 1000),
+        ),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [recording]);
+  async function toggleRecording() {
+    if (recording) {
+      recorderRef.current?.stop();
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      setRecording(false);
+      return;
+    }
+    if (
+      !window.isSecureContext ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
+      setRecordingIssue(
+        "Este navegador não oferece gravação direta. Abra o endereço no Chrome completo ou importe um áudio já gravado.",
+      );
       return;
     }
     setRequestingMic(true);
-    try{ const stream=await navigator.mediaDevices.getUserMedia({audio:true}); const recorder=new MediaRecorder(stream); const title=meetingTitleNow.trim()||`Reunião · ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`,transcriptionMode=newMeetingTranscriptionMode; chunksRef.current=[];participantsRef.current=[];setLiveParticipants([]); startedAtRef.current=Date.now(); setRecordingSeconds(0); setRecordingIssue(""); recorder.ondataavailable=e=>{if(e.data.size)chunksRef.current.push(e.data)}; recorder.onstop=async()=>{const blob=new Blob(chunksRef.current,{type:recorder.mimeType||"audio/webm"}); const seconds=Math.max(1,Math.round((Date.now()-startedAtRef.current)/1000)); const now=new Date();const base={id:Date.now(),name:title,createdAt:now.toLocaleDateString('pt-BR'),meetingDate:now.toISOString().slice(0,10),meetingTime:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),participants:participantsRef.current.join("\n"),duration:`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`,size:`${(blob.size/1024/1024).toFixed(1)} MB`,transcriptionMode}; await persistRecording({...base,blob}); setDeviceRecordings(r=>[{...base,url:URL.createObjectURL(blob)},...r]); setMeetingTitleNow(""); setActive("Arquivos"); notify("Gravação e lista de presença salvas");}; recorder.start(1000); recorderRef.current=recorder; streamRef.current=stream; setRecording(true); setActive("Reuniões"); notify("Gravação iniciada pelo microfone"); }catch(error){ const reason=error instanceof DOMException&&error.name==="NotAllowedError"?"O navegador recusou o microfone. Confira a permissão e se outro aplicativo está usando o dispositivo.":"Não foi possível iniciar o microfone neste navegador."; setRecordingIssue(reason); }finally{setRequestingMic(false);}
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const title =
+          meetingTitleNow.trim() ||
+          `Reunião · ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
+        transcriptionMode = newMeetingTranscriptionMode;
+      chunksRef.current = [];
+      participantsRef.current = [];
+      setLiveParticipants([]);
+      startedAtRef.current = Date.now();
+      setRecordingSeconds(0);
+      setRecordingIssue("");
+      recorder.ondataavailable = (e) => {
+        if (e.data.size) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+        const seconds = Math.max(
+          1,
+          Math.round((Date.now() - startedAtRef.current) / 1000),
+        );
+        const now = new Date();
+        const base = {
+          id: Date.now(),
+          name: title,
+          createdAt: now.toLocaleDateString("pt-BR"),
+          meetingDate: now.toISOString().slice(0, 10),
+          meetingTime: now.toLocaleTimeString("pt-BR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          participants: participantsRef.current.join("\n"),
+          duration: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
+          size: `${(blob.size / 1024 / 1024).toFixed(1)} MB`,
+          transcriptionMode,
+        };
+        await persistRecording({ ...base, blob });
+        setDeviceRecordings((r) => [
+          { ...base, url: URL.createObjectURL(blob) },
+          ...r,
+        ]);
+        setMeetingTitleNow("");
+        setActive("Arquivos");
+        notify("Gravação e lista de presença salvas");
+      };
+      recorder.start(1000);
+      recorderRef.current = recorder;
+      streamRef.current = stream;
+      setRecording(true);
+      setActive("Reuniões");
+      notify("Gravação iniciada pelo microfone");
+    } catch (error) {
+      const reason =
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? "O navegador recusou o microfone. Confira a permissão e se outro aplicativo está usando o dispositivo."
+          : "Não foi possível iniciar o microfone neste navegador.";
+      setRecordingIssue(reason);
+    } finally {
+      setRequestingMic(false);
+    }
   }
-  async function importAudio(file?: File){
-    if(!file)return; const base={id:Date.now(),name:file.name.replace(/\.[^.]+$/,"")||"Reunião importada",createdAt:new Date().toLocaleDateString("pt-BR"),duration:"áudio importado",size:`${(file.size/1024/1024).toFixed(1)} MB`,transcriptionMode:newMeetingTranscriptionMode}; await persistRecording({...base,blob:file}); setDeviceRecordings(r=>[{...base,url:URL.createObjectURL(file)},...r]); setRecordingIssue(""); setActive("Arquivos"); notify("Áudio importado e salvo no aparelho");
+  async function importAudio(file?: File) {
+    if (!file) return;
+    const base = {
+      id: Date.now(),
+      name: file.name.replace(/\.[^.]+$/, "") || "Reunião importada",
+      createdAt: new Date().toLocaleDateString("pt-BR"),
+      duration: "áudio importado",
+      size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+      transcriptionMode: newMeetingTranscriptionMode,
+    };
+    await persistRecording({ ...base, blob: file });
+    setDeviceRecordings((r) => [
+      { ...base, url: URL.createObjectURL(file) },
+      ...r,
+    ]);
+    setRecordingIssue("");
+    setActive("Arquivos");
+    notify("Áudio importado e salvo no aparelho");
   }
-  async function updateRecording(id:number,patch:Partial<DeviceRecording>){await patchRecording(id,patch);setDeviceRecordings(rows=>rows.map(r=>r.id===id?{...r,...patch}:r));}
-  async function deleteRecording(id:number){const target=deviceRecordings.find(r=>r.id===id);if(!target)return;await removeRecording(id);URL.revokeObjectURL(target.url);setDeviceRecordings(rows=>rows.filter(r=>r.id!==id));notify("Reunião e todos os dados vinculados foram excluídos")}
-  function saveScheduledMeeting(){if(!meetingTitle.trim()||!meetingDate||!meetingTime){notify("Preencha título, data e horário");return}const next=[...scheduledMeetings,{id:Date.now(),title:meetingTitle.trim(),date:meetingDate,time:meetingTime}].sort((a,b)=>`${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));setScheduledMeetings(next);localStorage.setItem("keynotesai-meetings",JSON.stringify(next));setMeetingTitle("");setMeetingDate("");setMeetingTime("");setShowScheduleForm(false);notify("Reunião adicionada à agenda")}
-  const dashboardRecent = deviceRecordings.map(r=>({title:r.name,date:r.createdAt,duration:r.duration,tag:"Gravação",color:"#b98b4e",local:true})).slice(0,5);
-  if (!loggedIn) return (
-    <main className="cover-page">
-      <section className="cover-brand-panel">
-        <div className="cover-institution"><div className="ifsc-plate"><img src="/ifsc-continente-branco.png" alt="Instituto Federal de Santa Catarina, Câmpus Florianópolis-Continente" /></div></div>
-        <div className="cover-message"><p className="cover-kicker">INTELIGÊNCIA PARA REUNIÕES</p><h1>Conversas mais<br/>produtivas.</h1><h2>Decisões mais<br/>claras.</h2><p className="cover-copy">Gravações, atas, decisões e próximos passos reunidos em um ambiente inteligente e seguro.</p></div>
-        <div className="cover-maker"><small>DESENVOLVIDO PELO</small><div><img src="/inovalab-mark.png" alt=""/><strong>INOVALAB</strong></div><p>Laboratório de Inovação e Mídias Digitais</p></div>
-      </section>
-      <section className="cover-access-panel">
-        <div className="access-wrap">
-          <div className="cover-app-mark"><img src="/keynotesai-logo.png" alt="Símbolo do KeyNotesAI"/></div><p className="access-kicker">KEYNOTESAI</p><h2>Acesse sua conta</h2><p className="access-subtitle">Entre com sua identidade institucional para continuar.</p>
-          <button className="login-button" onClick={()=>setLoggedIn(true)}><span className="login-symbol">○</span><strong>Entrar no KeyNotesAI</strong><span>→</span></button><p className="secure-note">◇ Acesso restrito a usuários autorizados.</p>
-          <div className="access-divider"/><h3>O que você encontrará</h3>
-          <div className="access-benefits"><div><span>IA</span><p><strong>Reuniões inteligentes</strong><small>Gravação, transcrição e resumos</small></p></div><div><span>AM</span><p><strong>Ações e decisões</strong><small>Responsáveis, prazos e bloqueios claros</small></p></div><div><span>TR</span><p><strong>Integração com Trello</strong><small>Cada reunião organizada em um card</small></p></div></div>
-        </div>
-        <p className="access-help">Problemas para acessar? Procure a administração do sistema.</p>
-      </section>
-    </main>
-  );
+  async function updateRecording(id: number, patch: Partial<DeviceRecording>) {
+    await patchRecording(id, patch);
+    setDeviceRecordings((rows) =>
+      rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    );
+  }
+  async function deleteRecording(id: number) {
+    const target = deviceRecordings.find((r) => r.id === id);
+    if (!target) return;
+    await removeRecording(id);
+    URL.revokeObjectURL(target.url);
+    setDeviceRecordings((rows) => rows.filter((r) => r.id !== id));
+    notify("Reunião e todos os dados vinculados foram excluídos");
+  }
+  function saveScheduledMeeting() {
+    if (!meetingTitle.trim() || !meetingDate || !meetingTime) {
+      notify("Preencha título, data e horário");
+      return;
+    }
+    const next = [
+      ...scheduledMeetings,
+      {
+        id: Date.now(),
+        title: meetingTitle.trim(),
+        date: meetingDate,
+        time: meetingTime,
+      },
+    ].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+    setScheduledMeetings(next);
+    localStorage.setItem("keynotesai-meetings", JSON.stringify(next));
+    setMeetingTitle("");
+    setMeetingDate("");
+    setMeetingTime("");
+    setShowScheduleForm(false);
+    notify("Reunião adicionada à agenda");
+  }
+  const dashboardRecent = deviceRecordings
+    .map((r) => ({
+      title: r.name,
+      date: r.createdAt,
+      duration: r.duration,
+      tag: "Gravação",
+      color: "#b98b4e",
+      local: true,
+    }))
+    .slice(0, 5);
+  if (session === undefined)
+    return (
+      <main className="auth-loading">
+        <span>◉</span>
+        <strong>Verificando acesso…</strong>
+      </main>
+    );
+  if (!session)
+    return (
+      <main className="cover-page">
+        <section className="cover-brand-panel">
+          <div className="cover-institution">
+            <div className="ifsc-plate">
+              <img
+                src="/ifsc-continente-branco.png"
+                alt="Instituto Federal de Santa Catarina, Câmpus Florianópolis-Continente"
+              />
+            </div>
+          </div>
+          <div className="cover-message">
+            <p className="cover-kicker">INTELIGÊNCIA PARA REUNIÕES</p>
+            <h1>
+              Conversas mais
+              <br />
+              produtivas.
+            </h1>
+            <h2>
+              Decisões mais
+              <br />
+              claras.
+            </h2>
+            <p className="cover-copy">
+              Gravações, atas, decisões e próximos passos reunidos em um
+              ambiente inteligente e seguro.
+            </p>
+          </div>
+          <div className="cover-maker">
+            <small>DESENVOLVIDO PELO</small>
+            <div>
+              <img src="/inovalab-mark.png" alt="" />
+              <strong>INOVALAB</strong>
+            </div>
+            <p>Laboratório de Inovação e Mídias Digitais</p>
+          </div>
+        </section>
+        <section className="cover-access-panel">
+          <div className="access-wrap">
+            <div className="cover-app-mark">
+              <img src="/keynotesai-logo.png" alt="Símbolo do KeyNotesAI" />
+            </div>
+            <p className="access-kicker">KEYNOTESAI</p>
+            <h2>Acesse sua conta</h2>
+            <p className="access-subtitle">
+              Entre com sua identidade institucional para continuar.
+            </p>
+            <button
+              className="login-button"
+              onClick={() =>
+                (location.href = "/signin-with-chatgpt?return_to=%2F")
+              }
+            >
+              <span className="login-symbol">○</span>
+              <strong>Entrar com ChatGPT</strong>
+              <span>→</span>
+            </button>
+            <p className="secure-note">
+              ◇ Acesso restrito a usuários autorizados.
+            </p>
+            <div className="access-divider" />
+            <h3>O que você encontrará</h3>
+            <div className="access-benefits">
+              <div>
+                <span>IA</span>
+                <p>
+                  <strong>Reuniões inteligentes</strong>
+                  <small>Gravação, transcrição e resumos</small>
+                </p>
+              </div>
+              <div>
+                <span>AM</span>
+                <p>
+                  <strong>Ações e decisões</strong>
+                  <small>Responsáveis, prazos e bloqueios claros</small>
+                </p>
+              </div>
+              <div>
+                <span>TR</span>
+                <p>
+                  <strong>Integração com Trello</strong>
+                  <small>Cada reunião organizada em um card</small>
+                </p>
+              </div>
+            </div>
+          </div>
+          <p className="access-help">
+            Problemas para acessar? Procure a administração do sistema.
+          </p>
+        </section>
+      </main>
+    );
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><img src="/keynotesai-logo.png" alt="" /><div><strong>KeyNotes<span>AI</span></strong><small>Meeting intelligence</small></div></div>
+        <div className="brand">
+          <img src="/keynotesai-logo.png" alt="" />
+          <div>
+            <strong>
+              KeyNotes<span>AI</span>
+            </strong>
+            <small>Meeting intelligence</small>
+          </div>
+        </div>
         <nav aria-label="Navegação principal">
-          {[['◈','Visão geral'],['▷','Reuniões'],['◉','Arquivos'],['✓','Ações'],['⊙','Decisões'],['⌕','Pergunte à IA']].map(([icon, label]) => <button key={label} className={active === label ? "active" : ""} onClick={() => setActive(label)}><span>{icon}</span>{label}</button>)}
+          {[
+            ["◈", "Visão geral"],
+            ["▷", "Reuniões"],
+            ["◉", "Arquivos"],
+            ["✓", "Ações"],
+            ["⊙", "Decisões"],
+            ["⌕", "Pergunte à IA"],
+            ...(session.role === "admin" ? [["⚙", "Administração"]] : []),
+          ].map(([icon, label]) => (
+            <button
+              key={label}
+              className={active === label ? "active" : ""}
+              onClick={() => setActive(label)}
+            >
+              <span>{icon}</span>
+              {label}
+            </button>
+          ))}
         </nav>
-        <div className="sidebar-bottom"><p>INTEGRAÇÕES</p><button onClick={() => notify("Configuração do Trello aberta")}><span className="trello-mini">T</span><span>Trello<small>Conectado</small></span><i>•••</i></button><div className="user"><span>RB</span><div><strong>Rogério Bittencourt</strong><small>Administrador</small></div></div></div>
+        <div className="sidebar-bottom">
+          <p>INTEGRAÇÕES</p>
+          <button onClick={() => notify("Configuração do Trello aberta")}>
+            <span className="trello-mini">T</span>
+            <span>
+              Trello<small>Conectado</small>
+            </span>
+            <i>•••</i>
+          </button>
+          <div className="user">
+            <span>{session.name.slice(0, 2).toUpperCase()}</span>
+            <div>
+              <strong>{session.name}</strong>
+              <small>
+                {session.role === "admin"
+                  ? "Administrador"
+                  : `${session.used}/${session.monthlyLimit} operações`}
+              </small>
+            </div>
+          </div>
+        </div>
       </aside>
       <section className="workspace">
-        <header><button className="mobile-brand" aria-label="Abrir menu" onClick={()=>notify("Acesse os módulos pela navegação")}><img src="/keynotesai-logo.png" alt="" /></button><div className="search"><span>⌕</span><input aria-label="Buscar" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} onKeyDown={e=>e.key==='Enter'&&runSearch()} placeholder="Buscar reuniões, decisões ou tarefas..." /><button aria-label="Executar busca" onClick={runSearch}>Buscar</button></div><div className="header-actions"><button aria-label="Ajuda" onClick={()=>setHeaderPanel(headerPanel==='help'?null:'help')}>?</button><button aria-label="Notificações" onClick={()=>setHeaderPanel(headerPanel==='notifications'?null:'notifications')}>○<i /></button><button className="avatar" aria-label="Perfil" onClick={()=>setHeaderPanel(headerPanel==='profile'?null:'profile')}>RB</button></div>{headerPanel&&<div className="header-popover">{headerPanel==='help'?<><strong>Central de ajuda</strong><p>Grave na Visão geral. Depois encontre áudio, ata e relatórios em Arquivos.</p><button onClick={()=>{setActive("Arquivos");setHeaderPanel(null)}}>Ir para Arquivos →</button></>:headerPanel==='notifications'?<><strong>Notificações</strong><p>3 ações vencem esta semana.</p><p>O Trello aguarda credenciais.</p><button onClick={()=>{setActive("Ações");setHeaderPanel(null)}}>Ver ações →</button></>:<><strong>Rogério Bittencourt</strong><p>Administrador · IFSC</p><button onClick={()=>setLoggedIn(false)}>Sair da conta</button></>}</div>}</header>
+        <header>
+          <button
+            className="mobile-brand"
+            aria-label="Abrir menu"
+            onClick={() => notify("Acesse os módulos pela navegação")}
+          >
+            <img src="/keynotesai-logo.png" alt="" />
+          </button>
+          <div className="search">
+            <span>⌕</span>
+            <input
+              aria-label="Buscar"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              placeholder="Buscar reuniões, decisões ou tarefas..."
+            />
+            <button aria-label="Executar busca" onClick={runSearch}>
+              Buscar
+            </button>
+          </div>
+          <div className="header-actions">
+            <button
+              aria-label="Ajuda"
+              onClick={() =>
+                setHeaderPanel(headerPanel === "help" ? null : "help")
+              }
+            >
+              ?
+            </button>
+            <button
+              aria-label="Notificações"
+              onClick={() =>
+                setHeaderPanel(
+                  headerPanel === "notifications" ? null : "notifications",
+                )
+              }
+            >
+              ○<i />
+            </button>
+            <button
+              className="avatar"
+              aria-label="Perfil"
+              onClick={() =>
+                setHeaderPanel(headerPanel === "profile" ? null : "profile")
+              }
+            >
+              RB
+            </button>
+          </div>
+          {headerPanel && (
+            <div className="header-popover">
+              {headerPanel === "help" ? (
+                <>
+                  <strong>Central de ajuda</strong>
+                  <p>
+                    Grave na Visão geral. Depois encontre áudio, ata e
+                    relatórios em Arquivos.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setActive("Arquivos");
+                      setHeaderPanel(null);
+                    }}
+                  >
+                    Ir para Arquivos →
+                  </button>
+                </>
+              ) : headerPanel === "notifications" ? (
+                <>
+                  <strong>Notificações</strong>
+                  <p>3 ações vencem esta semana.</p>
+                  <p>O Trello aguarda credenciais.</p>
+                  <button
+                    onClick={() => {
+                      setActive("Ações");
+                      setHeaderPanel(null);
+                    }}
+                  >
+                    Ver ações →
+                  </button>
+                </>
+              ) : (
+                <>
+                  <strong>{session.name}</strong>
+                  <p>{session.role==="admin"?"Administrador":"Usuário autorizado"} · {session.email}</p>
+                  <button onClick={() => location.href="/signout-with-chatgpt?return_to=%2F"}>
+                    Sair da conta
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </header>
         <div className="content">
-          {active !== "Visão geral" ? <RealFeatureView active={active} notify={notify} recordings={deviceRecordings} recording={recording} recordingSeconds={recordingSeconds} stopRecording={toggleRecording} updateRecording={updateRecording} deleteRecording={deleteRecording} liveParticipants={liveParticipants} listeningParticipant={listeningParticipant} captureParticipant={captureParticipant} registerParticipant={registerParticipant} navigate={setActive} /> : <><section className="welcome"><div><p className="eyebrow">QUINTA-FEIRA, 20 DE AGOSTO</p><h1>Bom dia, Rogério.</h1><p>Você foca na reunião, a IA cuida do resto.</p></div><div className="record-actions"><button className={`record ${recording ? "recording" : ""}`} disabled={requestingMic} onClick={toggleRecording}><i />{requestingMic?"Solicitando microfone...":recording ? "Encerrar e salvar" : "Gravar nova reunião"}</button><button className="import-audio" onClick={()=>audioImportRef.current?.click()}>↑ Importar áudio</button><input ref={audioImportRef} type="file" accept="audio/*,.webm" hidden onChange={e=>{void importAudio(e.target.files?.[0]);e.currentTarget.value=""}}/></div></section>{recordingIssue&&<div className="recording-issue" role="alert"><span>!</span><div><strong>A gravação direta não iniciou</strong><p>{recordingIssue}</p></div><button onClick={()=>audioImportRef.current?.click()}>Importar áudio</button><button aria-label="Fechar aviso" onClick={()=>setRecordingIssue("")}>×</button></div>}
-          <section className="hero-grid">
-            <div className="agenda card start-meeting-card"><div className="card-head"><div><p className="eyebrow">REUNIÃO AGORA</p><h2>Cadastrar e iniciar</h2></div><span>Sem calendário</span></div><div className="start-meeting-body"><div><strong>Dê um nome à reunião</strong><p>O título identificará a gravação, o histórico, a transcrição e todos os documentos gerados.</p></div><input value={meetingTitleNow} onChange={e=>setMeetingTitleNow(e.target.value)} onKeyDown={e=>e.key==='Enter'&&void toggleRecording()} placeholder="Ex.: Reunião de alinhamento" aria-label="Nome da reunião"/><label className="meeting-mode-select"><span>Processamento da reunião</span><select value={newMeetingTranscriptionMode} onChange={e=>setNewMeetingTranscriptionMode(e.target.value as "hybrid"|"openai")}><option value="hybrid">Híbrido · transcrição local (padrão)</option><option value="openai">Totalmente OpenAI · áudio e documentos</option></select></label><button onClick={toggleRecording} disabled={requestingMic}><i/>{requestingMic?'Solicitando microfone...':'Iniciar reunião e gravar'}</button></div></div>
-            <div className="trello-card card"><div className="trello-top"><span className="trello-logo">T</span><span>Integração ativa</span><i /></div><h2>Cada reunião,<br/>um card completo.</h2><p>Resumo, decisões, arquivos e ações sincronizados automaticamente no Trello.</p><div className="sync-status"><span>✓</span><div><strong>Sincronização em dia</strong><small>12 cards atualizados hoje</small></div></div><button onClick={() => notify("Abrindo quadro KeyNotesAI no Trello")}>Abrir quadro no Trello <span>↗</span></button></div>
-          </section>
-          <section className="metrics"><article><span className="metric-icon gold">✓</span><div><small>AÇÕES EM ABERTO</small><strong>{deviceRecordings.flatMap(r=>r.actions||[]).filter(a=>!a.done).length}</strong><p>Extraídas de reuniões processadas</p></div></article><article><span className="metric-icon green">◇</span><div><small>REUNIÕES REGISTRADAS</small><strong>{deviceRecordings.length}</strong><p>Gravações reais neste aparelho</p></div></article><article><span className="metric-icon slate">◷</span><div><small>REUNIÕES PROCESSADAS</small><strong>{deviceRecordings.filter(r=>r.processedAt).length}</strong><p>Com documentos gerados</p></div></article></section>
-          <section className="lower-grid">
-            <div className="actions card"><div className="card-head"><div><p className="eyebrow">ACTION MATRIX</p><h2>Próximas entregas</h2></div><button onClick={() => setActive("Ações")}>Ver todas →</button></div><div className="dashboard-empty"><span>✓</span><strong>Nenhuma ação identificada</strong><p>As tarefas aparecerão aqui somente após uma reunião real ser transcrita e processada.</p></div></div>
-            <div className="recent card"><div className="card-head"><div><p className="eyebrow">HISTÓRICO</p><h2>Reuniões recentes</h2></div><button onClick={() => setActive("Arquivos")}>Ver todas →</button></div>{dashboardRecent.length===0?<div className="dashboard-empty"><span>▶</span><strong>Nenhuma reunião gravada</strong><p>As gravações concluídas aparecerão aqui automaticamente.</p></div>:dashboardRecent.map((r,i) => <button className="recent-row" key={`${r.title}-${i}`} onClick={() => setActive("Arquivos")}><span className="doc">▶</span><div><strong>{r.title}</strong><small>{r.date} · {r.duration}</small></div><em style={{'--tag': r.color} as React.CSSProperties}>{r.tag}</em><b>›</b></button>)}</div>
-          </section></>}
+          {active === "Administração"&&session.role==="admin" ? <AdminPanel notify={notify}/> : active !== "Visão geral" ? (
+            <RealFeatureView
+              active={active}
+              notify={notify}
+              recordings={deviceRecordings}
+              recording={recording}
+              recordingSeconds={recordingSeconds}
+              stopRecording={toggleRecording}
+              updateRecording={updateRecording}
+              deleteRecording={deleteRecording}
+              liveParticipants={liveParticipants}
+              listeningParticipant={listeningParticipant}
+              captureParticipant={captureParticipant}
+              registerParticipant={registerParticipant}
+              navigate={setActive}
+            />
+          ) : (
+            <>
+              <section className="welcome">
+                <div>
+                  <p className="eyebrow">QUINTA-FEIRA, 20 DE AGOSTO</p>
+                  <h1>Bom dia, Rogério.</h1>
+                  <p>Você foca na reunião, a IA cuida do resto.</p>
+                </div>
+                <div className="record-actions">
+                  <button
+                    className={`record ${recording ? "recording" : ""}`}
+                    disabled={requestingMic}
+                    onClick={toggleRecording}
+                  >
+                    <i />
+                    {requestingMic
+                      ? "Solicitando microfone..."
+                      : recording
+                        ? "Encerrar e salvar"
+                        : "Gravar nova reunião"}
+                  </button>
+                  <button
+                    className="import-audio"
+                    onClick={() => audioImportRef.current?.click()}
+                  >
+                    ↑ Importar áudio
+                  </button>
+                  <input
+                    ref={audioImportRef}
+                    type="file"
+                    accept="audio/*,.webm"
+                    hidden
+                    onChange={(e) => {
+                      void importAudio(e.target.files?.[0]);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </div>
+              </section>
+              {recordingIssue && (
+                <div className="recording-issue" role="alert">
+                  <span>!</span>
+                  <div>
+                    <strong>A gravação direta não iniciou</strong>
+                    <p>{recordingIssue}</p>
+                  </div>
+                  <button onClick={() => audioImportRef.current?.click()}>
+                    Importar áudio
+                  </button>
+                  <button
+                    aria-label="Fechar aviso"
+                    onClick={() => setRecordingIssue("")}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              <section className="hero-grid">
+                <div className="agenda card start-meeting-card">
+                  <div className="card-head">
+                    <div>
+                      <p className="eyebrow">REUNIÃO AGORA</p>
+                      <h2>Cadastrar e iniciar</h2>
+                    </div>
+                    <span>Sem calendário</span>
+                  </div>
+                  <div className="start-meeting-body">
+                    <div>
+                      <strong>Dê um nome à reunião</strong>
+                      <p>
+                        O título identificará a gravação, o histórico, a
+                        transcrição e todos os documentos gerados.
+                      </p>
+                    </div>
+                    <input
+                      value={meetingTitleNow}
+                      onChange={(e) => setMeetingTitleNow(e.target.value)}
+                      onKeyDown={(e) =>
+                        e.key === "Enter" && void toggleRecording()
+                      }
+                      placeholder="Ex.: Reunião de alinhamento"
+                      aria-label="Nome da reunião"
+                    />
+                    <label className="meeting-mode-select">
+                      <span>Processamento da reunião</span>
+                      <select
+                        value={newMeetingTranscriptionMode}
+                        onChange={(e) =>
+                          setNewMeetingTranscriptionMode(
+                            e.target.value as "hybrid" | "openai",
+                          )
+                        }
+                      >
+                        <option value="hybrid">
+                          Híbrido · transcrição local (padrão)
+                        </option>
+                        <option value="openai">
+                          Totalmente OpenAI · áudio e documentos
+                        </option>
+                      </select>
+                    </label>
+                    <button onClick={toggleRecording} disabled={requestingMic}>
+                      <i />
+                      {requestingMic
+                        ? "Solicitando microfone..."
+                        : "Iniciar reunião e gravar"}
+                    </button>
+                  </div>
+                </div>
+                <div className="trello-card card">
+                  <div className="trello-top">
+                    <span className="trello-logo">T</span>
+                    <span>Integração ativa</span>
+                    <i />
+                  </div>
+                  <h2>
+                    Cada reunião,
+                    <br />
+                    um card completo.
+                  </h2>
+                  <p>
+                    Resumo, decisões, arquivos e ações sincronizados
+                    automaticamente no Trello.
+                  </p>
+                  <div className="sync-status">
+                    <span>✓</span>
+                    <div>
+                      <strong>Sincronização em dia</strong>
+                      <small>12 cards atualizados hoje</small>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() =>
+                      notify("Abrindo quadro KeyNotesAI no Trello")
+                    }
+                  >
+                    Abrir quadro no Trello <span>↗</span>
+                  </button>
+                </div>
+              </section>
+              <section className="metrics">
+                <article>
+                  <span className="metric-icon gold">✓</span>
+                  <div>
+                    <small>AÇÕES EM ABERTO</small>
+                    <strong>
+                      {
+                        deviceRecordings
+                          .flatMap((r) => r.actions || [])
+                          .filter((a) => !a.done).length
+                      }
+                    </strong>
+                    <p>Extraídas de reuniões processadas</p>
+                  </div>
+                </article>
+                <article>
+                  <span className="metric-icon green">◇</span>
+                  <div>
+                    <small>REUNIÕES REGISTRADAS</small>
+                    <strong>{deviceRecordings.length}</strong>
+                    <p>Gravações reais neste aparelho</p>
+                  </div>
+                </article>
+                <article>
+                  <span className="metric-icon slate">◷</span>
+                  <div>
+                    <small>REUNIÕES PROCESSADAS</small>
+                    <strong>
+                      {deviceRecordings.filter((r) => r.processedAt).length}
+                    </strong>
+                    <p>Com documentos gerados</p>
+                  </div>
+                </article>
+              </section>
+              <section className="lower-grid">
+                <div className="actions card">
+                  <div className="card-head">
+                    <div>
+                      <p className="eyebrow">ACTION MATRIX</p>
+                      <h2>Próximas entregas</h2>
+                    </div>
+                    <button onClick={() => setActive("Ações")}>
+                      Ver todas →
+                    </button>
+                  </div>
+                  <div className="dashboard-empty">
+                    <span>✓</span>
+                    <strong>Nenhuma ação identificada</strong>
+                    <p>
+                      As tarefas aparecerão aqui somente após uma reunião real
+                      ser transcrita e processada.
+                    </p>
+                  </div>
+                </div>
+                <div className="recent card">
+                  <div className="card-head">
+                    <div>
+                      <p className="eyebrow">HISTÓRICO</p>
+                      <h2>Reuniões recentes</h2>
+                    </div>
+                    <button onClick={() => setActive("Arquivos")}>
+                      Ver todas →
+                    </button>
+                  </div>
+                  {dashboardRecent.length === 0 ? (
+                    <div className="dashboard-empty">
+                      <span>▶</span>
+                      <strong>Nenhuma reunião gravada</strong>
+                      <p>
+                        As gravações concluídas aparecerão aqui automaticamente.
+                      </p>
+                    </div>
+                  ) : (
+                    dashboardRecent.map((r, i) => (
+                      <button
+                        className="recent-row"
+                        key={`${r.title}-${i}`}
+                        onClick={() => setActive("Arquivos")}
+                      >
+                        <span className="doc">▶</span>
+                        <div>
+                          <strong>{r.title}</strong>
+                          <small>
+                            {r.date} · {r.duration}
+                          </small>
+                        </div>
+                        <em style={{ "--tag": r.color } as React.CSSProperties}>
+                          {r.tag}
+                        </em>
+                        <b>›</b>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+            </>
+          )}
         </div>
-        <footer><div><img src="/inovalab-logo.png" alt="INOVALAB IFSC Campus Continente"/><span></span><img src="/ifsc-logo.png" alt="Instituto Federal de Santa Catarina"/></div><p>KeyNotesAI · Tecnologia que transforma conversa em ação.</p></footer>
-      </section>{recording&&<div className="recording-dock" role="status"><div className="recording-live"><i/><span><small>GRAVANDO NESTE APARELHO</small><strong>{String(Math.floor(recordingSeconds/60)).padStart(2,'0')}:{String(recordingSeconds%60).padStart(2,'0')}</strong></span></div><div className="sound-bars">{[1,2,3,4,5,6,7,8].map(n=><i key={n}/>)}</div><p>O áudio será salvo em <b>Arquivos</b> quando você encerrar.</p><button onClick={toggleRecording}><i/> Encerrar e salvar</button></div>}{toast && <div className="toast" role="status">{toast}</div>}
+        <footer>
+          <div>
+            <img
+              src="/inovalab-logo.png"
+              alt="INOVALAB IFSC Campus Continente"
+            />
+            <span></span>
+            <img
+              src="/ifsc-logo.png"
+              alt="Instituto Federal de Santa Catarina"
+            />
+          </div>
+          <p>KeyNotesAI · Tecnologia que transforma conversa em ação.</p>
+        </footer>
+      </section>
+      {recording && (
+        <div className="recording-dock" role="status">
+          <div className="recording-live">
+            <i />
+            <span>
+              <small>GRAVANDO NESTE APARELHO</small>
+              <strong>
+                {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
+                {String(recordingSeconds % 60).padStart(2, "0")}
+              </strong>
+            </span>
+          </div>
+          <div className="sound-bars">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+              <i key={n} />
+            ))}
+          </div>
+          <p>
+            O áudio será salvo em <b>Arquivos</b> quando você encerrar.
+          </p>
+          <button onClick={toggleRecording}>
+            <i /> Encerrar e salvar
+          </button>
+        </div>
+      )}
+      {toast && (
+        <div className="toast" role="status">
+          {toast}
+        </div>
+      )}
     </main>
   );
 }
