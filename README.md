@@ -59,6 +59,8 @@ D1. O URI de redirecionamento autorizado é
 
 ## Ideias preservadas para evolução
 
+O roteiro completo e priorizado está em [`ROADMAP.md`](./ROADMAP.md).
+
 ### Autenticação híbrida sem obrigatoriedade de ChatGPT
 
 Manter o Sign in with ChatGPT enquanto o projeto estiver em validação. Caso a
