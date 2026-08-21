@@ -883,13 +883,34 @@ export default function Home() {
     );
   }
   async function deleteRecording(id: number) {
+    if (session?.role !== "admin") {
+      notify("Somente o administrador pode excluir reuniões");
+      return;
+    }
     const target = deviceRecordings.find((r) => r.id === id);
     if (!target) return;
+    const response = await fetch("/api/admin/meetings", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ meetingId: id }),
+    });
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      trashedFolders?: number;
+    };
+    if (!response.ok) {
+      notify(body.error || "Não foi possível excluir a reunião por completo");
+      return;
+    }
     await removeRecording(id);
     URL.revokeObjectURL(target.url);
     if (target.meetingPhotoUrl) URL.revokeObjectURL(target.meetingPhotoUrl);
     setDeviceRecordings((rows) => rows.filter((r) => r.id !== id));
-    notify("Reunião e todos os dados vinculados foram excluídos");
+    notify(
+      body.trashedFolders
+        ? "Reunião excluída e pasta do Drive movida para a lixeira"
+        : "Reunião e todos os dados locais foram excluídos",
+    );
   }
   function saveScheduledMeeting() {
     if (!meetingTitle.trim() || !meetingDate || !meetingTime) {
@@ -1226,6 +1247,7 @@ export default function Home() {
         <div className="content">
           {active === "Administração"&&session.role==="admin" ? <AdminPanel notify={notify}/> : active !== "Visão geral" ? (
             <RealFeatureView
+              isAdmin={session.role === "admin"}
               active={active}
               notify={notify}
               recordings={deviceRecordings}

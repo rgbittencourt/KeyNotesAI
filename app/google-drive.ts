@@ -77,11 +77,22 @@ async function upload(token: string, folderId: string, name: string, content: Bl
 }
 
 async function trashFile(token: string, fileId: string) {
-  return googleFetch<DriveFile>(token, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,webViewLink`, {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, {
     method: "PATCH",
-    headers: { "content-type": "application/json" },
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ trashed: true }),
   });
+  if (response.status === 404) return;
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+    throw new Error(body?.error?.message || "Não foi possível mover o item para a lixeira do Google Drive.");
+  }
+}
+
+export async function trashDriveFolders(folderIds: string[]) {
+  const token = await getDriveAccessToken();
+  for (const folderId of [...new Set(folderIds.filter(Boolean))])
+    await trashFile(token, folderId);
 }
 
 function folderIdFromMeeting(meeting: DriveMeeting) {

@@ -12,6 +12,7 @@ import { answerMeetingQuestion } from "./smart-meeting-query";
 import type { DeviceRecording } from "./page";
 
 type Props = {
+  isAdmin: boolean;
   active: string;
   recordings: DeviceRecording[];
   recording: boolean;
@@ -517,21 +518,23 @@ export default function RealFeatureView(p: Props) {
                     >
                       ↓ Baixar
                     </a>
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (
-                          confirm(
-                            `Excluir “${r.name}” e apagar gravação, transcrição, documentos, ações e decisões? Esta ação não pode ser desfeita.`,
-                          )
-                        ) {
-                          await p.deleteRecording(r.id);
-                          if (selectedId === r.id) setSelectedId(null);
-                        }
-                      }}
-                    >
-                      Excluir
-                    </button>
+                    {p.isAdmin && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (
+                            confirm(
+                              `Excluir completamente “${r.name}”? A gravação, foto, transcrição, chat, documentos, ações e decisões serão apagados deste aparelho, e todas as pastas vinculadas serão movidas para a lixeira do Google Drive.`,
+                            )
+                          ) {
+                            await p.deleteRecording(r.id);
+                            if (selectedId === r.id) setSelectedId(null);
+                          }
+                        }}
+                      >
+                        Excluir reunião e tudo
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
