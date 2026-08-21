@@ -1,8 +1,9 @@
-# vinext-starter
+# KeyNotesAI
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Aplicação para gravar e transcrever reuniões localmente e transformar a
+transcrição em resumo executivo, ata, ações, decisões, pendências e bloqueios.
+O áudio e a transcrição permanecem no dispositivo; somente a transcrição
+revisada é enviada para a OpenAI quando o usuário solicita a análise semântica.
 
 ## Prerequisites
 
@@ -15,6 +16,17 @@ npm install
 npm run dev
 npm run build
 ```
+
+Crie um arquivo `.env.local` ignorado pelo Git com `OPENAI_API_KEY`. O modelo
+pode ser configurado opcionalmente com `OPENAI_ANALYSIS_MODEL`; sem essa
+variável, a aplicação usa `gpt-5.4`.
+
+## Análise semântica
+
+A rota `POST /api/analyze-meeting` aceita uma transcrição, exige conteúdo
+mínimo e retorna JSON estruturado. A análise separa decisões confirmadas de
+pendências e bloqueios, extrai ações com responsável, prazo, evidência e nível
+de confiança, e rejeita transcrições excessivamente grandes.
 
 This starter does not use `wrangler.jsonc`.
 
