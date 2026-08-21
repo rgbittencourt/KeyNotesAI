@@ -922,6 +922,16 @@ export default function Home() {
       local: true,
     }))
     .slice(0, 5);
+  const dashboardOpenActions = deviceRecordings
+    .flatMap((recording) =>
+      (recording.actions || []).map((action) => ({
+        ...action,
+        recordingId: recording.id,
+        meetingName: recording.name,
+      })),
+    )
+    .filter((action) => !action.done)
+    .slice(0, 5);
   if (session === undefined)
     return (
       <main className="auth-loading">
@@ -1418,14 +1428,64 @@ export default function Home() {
                       Ver todas →
                     </button>
                   </div>
-                  <div className="dashboard-empty">
-                    <span>✓</span>
-                    <strong>Nenhuma ação identificada</strong>
-                    <p>
-                      As tarefas aparecerão aqui somente após uma reunião real
-                      ser transcrita e processada.
-                    </p>
-                  </div>
+                  {dashboardOpenActions.length === 0 ? (
+                    <div className="dashboard-empty">
+                      <span>✓</span>
+                      <strong>Nenhuma ação identificada</strong>
+                      <p>
+                        As tarefas aparecerão aqui somente após uma reunião real
+                        ser transcrita e processada.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="action-table">
+                      {dashboardOpenActions.map((action, index) => (
+                        <div
+                          className="action-row"
+                          key={`${action.recordingId}-${action.id || index}`}
+                        >
+                          <button
+                            aria-label={`Concluir ação: ${action.task}`}
+                            onClick={() =>
+                              void updateRecording(action.recordingId, {
+                                actions: deviceRecordings
+                                  .find(
+                                    (recording) =>
+                                      recording.id === action.recordingId,
+                                  )
+                                  ?.actions?.map((item) =>
+                                    item.id === action.id
+                                      ? { ...item, done: true }
+                                      : item,
+                                  ),
+                              })
+                            }
+                          />
+                          <div className="task">
+                            <strong>{action.task}</strong>
+                            <small>
+                              <span>
+                                {(action.person || "?")
+                                  .split(/\s+/)
+                                  .map((part) => part[0])
+                                  .join("")
+                                  .slice(0, 2)
+                                  .toUpperCase()}
+                              </span>
+                              {action.person || "Responsável a confirmar"} ·{" "}
+                              {action.meetingName}
+                            </small>
+                          </div>
+                          <time>{action.due || "Sem prazo"}</time>
+                          <em
+                            className={(action.priority || "").toLowerCase()}
+                          >
+                            {action.priority || "Normal"}
+                          </em>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="recent card">
                   <div className="card-head">
