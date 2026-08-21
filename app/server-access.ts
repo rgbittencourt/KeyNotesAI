@@ -1,0 +1,128 @@
+import { env } from "cloudflare:workers";
+import { getChatGPTUser } from "./chatgpt-auth";
+
+export const ADMIN_EMAIL = "rogerio.bittencourt@ifsc.edu.br";
+const period = () => new Date().toISOString().slice(0, 7);
+let initialized: Promise<void> | null = null;
+
+function db() {
+  if (!env.DB) throw new Error("Banco de usuários indisponível.");
+  return env.DB;
+}
+async function init() {
+  if (!initialized)
+    initialized = (async () => {
+      const d = db();
+      await d.batch([
+        d.prepare(
+          "CREATE TABLE IF NOT EXISTS app_users (email TEXT PRIMARY KEY, user_id TEXT UNIQUE, name TEXT, role TEXT NOT NULL DEFAULT 'user', status TEXT NOT NULL DEFAULT 'active', monthly_limit INTEGER NOT NULL DEFAULT 50, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        ),
+        d.prepare(
+          "CREATE TABLE IF NOT EXISTS api_usage (email TEXT NOT NULL, period TEXT NOT NULL, used INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (email, period), FOREIGN KEY (email) REFERENCES app_users(email) ON DELETE CASCADE)",
+        ),
+        d.prepare(
+          "CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_user_id ON app_users(user_id) WHERE user_id IS NOT NULL",
+        ),
+        d.prepare(
+          "CREATE INDEX IF NOT EXISTS idx_api_usage_period ON api_usage(period)",
+        ),
+      ]);
+    })();
+  return initialized;
+}
+
+export type AccessUser = {
+  userId: string;
+  email: string;
+  name: string;
+  role: "admin" | "user";
+  status: "active" | "disabled";
+  monthlyLimit: number;
+  used: number;
+};
+export async function requireAccess(): Promise<AccessUser> {
+  const identity = await getChatGPTUser();
+  if (!identity) throw new Response("Autenticação necessária", { status: 401 });
+  await init();
+  const d = db(),
+    email = identity.email.toLowerCase(),
+    now = new Date().toISOString();
+  if (email === ADMIN_EMAIL)
+    await d
+      .prepare(
+        "INSERT INTO app_users(email,user_id,name,role,status,monthly_limit,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(email) DO UPDATE SET user_id=excluded.user_id,name=excluded.name,role='admin',status='active',updated_at=excluded.updated_at",
+      )
+      .bind(
+        email,
+        identity.userId,
+        identity.displayName,
+        "admin",
+        "active",
+        1000,
+        now,
+        now,
+      )
+      .run();
+  else
+    await d
+      .prepare(
+        "UPDATE app_users SET user_id=?,name=COALESCE(name,?),updated_at=? WHERE email=? AND (user_id IS NULL OR user_id=?)",
+      )
+      .bind(identity.userId, identity.displayName, now, email, identity.userId)
+      .run();
+  const row = await d
+    .prepare(
+      "SELECT u.email,u.user_id,u.name,u.role,u.status,u.monthly_limit,COALESCE(x.used,0) used FROM app_users u LEFT JOIN api_usage x ON x.email=u.email AND x.period=? WHERE u.email=?",
+    )
+    .bind(period(), email)
+    .first<Record<string, unknown>>();
+  if (!row) throw new Response("Usuário não autorizado", { status: 403 });
+  if (row.status !== "active")
+    throw new Response("Usuário desativado", { status: 403 });
+  return {
+    userId: String(row.user_id || identity.userId),
+    email: String(row.email),
+    name: String(row.name || identity.displayName),
+    role: row.role === "admin" ? "admin" : "user",
+    status: "active",
+    monthlyLimit: Number(row.monthly_limit),
+    used: Number(row.used),
+  };
+}
+export async function requireAdmin() {
+  const user = await requireAccess();
+  if (user.role !== "admin")
+    throw new Response("Acesso administrativo necessário", { status: 403 });
+  return user;
+}
+export async function consumeUsage(email: string) {
+  await init();
+  const result = await db()
+    .prepare(
+      "INSERT INTO api_usage(email,period,used) SELECT email,?,1 FROM app_users WHERE email=? AND status='active' AND monthly_limit>0 ON CONFLICT(email,period) DO UPDATE SET used=used+1 WHERE used < (SELECT monthly_limit FROM app_users WHERE email=excluded.email)",
+    )
+    .bind(period(), email)
+    .run();
+  if (!result.meta.changes)
+    throw new Response("Seu limite mensal de operações de IA foi atingido.", {
+      status: 429,
+    });
+}
+export async function refundUsage(email: string) {
+  await init();
+  await db()
+    .prepare(
+      "UPDATE api_usage SET used=MAX(0,used-1) WHERE email=? AND period=?",
+    )
+    .bind(email, period())
+    .run();
+}
+export async function getRawDb() {
+  await init();
+  return db();
+}
+export async function accessError(error: unknown) {
+  return error instanceof Response
+    ? Response.json({ error: await error.text() }, { status: error.status })
+    : Response.json({ error: "Falha ao verificar acesso." }, { status: 500 });
+}

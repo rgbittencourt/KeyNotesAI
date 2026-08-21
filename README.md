@@ -34,6 +34,14 @@ geração dos documentos. No modo totalmente OpenAI, o áudio é enviado para
 `POST /api/transcribe-meeting`, que usa `gpt-transcribe` por padrão; o modelo
 pode ser alterado com `OPENAI_TRANSCRIPTION_MODEL`.
 
+## Acesso e limites
+
+O aplicativo usa Sign in with ChatGPT e mantém a lista autorizada no D1. O
+administrador principal é `rogerio.bittencourt@ifsc.edu.br`. Usuários comuns
+precisam ser cadastrados pelo painel Administração. Cada transcrição pela API
+ou geração de documentos consome uma operação da cota mensal configurada pelo
+administrador.
+
 This starter does not use `wrangler.jsonc`.
 
 ## Included Shape
