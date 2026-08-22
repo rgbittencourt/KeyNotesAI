@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { type MeetingAction, type MeetingDecision } from "./local-processing";
 import RealFeatureView from "./real-feature-view";
 import AdminPanel from "./admin-panel";
+import TrelloIntegrationPanel from "./trello-integration-panel";
 type SessionUser = {
   email: string;
   name: string;
@@ -1094,7 +1095,7 @@ export default function Home() {
         </nav>
         <div className="sidebar-bottom">
           <p>INTEGRAÇÕES</p>
-          <button onClick={() => session.role==="admin"?setActive("Administração"):notify("Trello gerenciado pelo Admin do INOVALAB")}>
+          <button className={active==="Trello"?"active":""} onClick={() => setActive("Trello")}>
             <img
               className="integration-logo"
               src="/trello-logo.png"
@@ -1251,7 +1252,7 @@ export default function Home() {
           )}
         </header>
         <div className="content">
-          {active === "Administração"&&session.role==="admin" ? <AdminPanel notify={notify}/> : active !== "Visão geral" ? (
+          {active === "Administração"&&session.role==="admin" ? <AdminPanel notify={notify}/> : active === "Trello" ? <TrelloIntegrationPanel isAdmin={session.role==="admin"} notify={notify}/> : active !== "Visão geral" ? (
             <RealFeatureView
               isAdmin={session.role === "admin"}
               active={active}
