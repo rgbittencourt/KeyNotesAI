@@ -1,28 +1,31 @@
 /* Rodapé institucional — padrão visual dos PWAs INOVALAB */
-.app-footer{border-top:1px solid var(--line);background:#efede7;padding:28px 4.5% 26px;display:grid;grid-template-columns:auto minmax(320px,1fr) auto;align-items:center;gap:32px}
-.app-footer>.footer-logos{display:flex;align-items:center;gap:15px}
-.app-footer .footer-logos img:first-child{width:105px;height:40px;object-fit:cover;object-position:center}
-.app-footer .footer-logos img:last-child{width:72px;height:40px;object-fit:contain}
-.app-footer .footer-logos>span{height:28px;width:1px;background:#d2d0c8}
-.app-footer>.footer-institution{display:grid;gap:4px}
-.app-footer .footer-institution p{margin:0;font-size:9px;line-height:1.45;letter-spacing:.2px;color:#74766f}
-.app-footer .footer-institution strong{color:#3f413c}
-.app-footer .footer-institution a{width:max-content;color:#3f765e;font-size:9px;font-weight:700;text-decoration:none}
-.app-footer .footer-institution a:hover{text-decoration:underline}
-.app-footer>.footer-signature{display:grid;justify-items:end;gap:3px;text-align:right}
-.app-footer .footer-signature strong{font-size:10px;letter-spacing:1.2px;color:#262724}
-.app-footer .footer-signature span{width:auto;height:auto;background:none;font-size:8px;color:#777971}
-.app-footer .footer-signature em{font-family:Georgia,serif;font-size:10px;color:#3f765e}
-.app-footer .footer-signature small{margin-top:4px;font-size:8px;letter-spacing:.35px;color:#8f918a}
+.app-footer{border-top:1px solid var(--line);background:#efede7;padding:30px 4.5% 22px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;column-gap:56px;row-gap:18px}
+.app-footer>.footer-party{display:flex;align-items:center;gap:20px;min-width:0}
+.app-footer>.footer-inovalab{justify-self:start}
+.app-footer>.footer-ifsc{justify-self:end}
+.app-footer .footer-logo{display:block;width:auto;height:64px;max-width:238px;object-fit:contain;object-position:center}
+.app-footer .footer-copy{display:grid;gap:4px;min-width:0}
+.app-footer .footer-copy-left{text-align:left;justify-items:start}
+.app-footer .footer-copy-right{text-align:right;justify-items:end}
+.app-footer .footer-copy p{margin:0;font-size:9px;line-height:1.45;letter-spacing:.2px;color:#74766f}
+.app-footer .footer-copy strong{font-size:10px;letter-spacing:.25px;color:#30322e}
+.app-footer .footer-copy span{width:auto;height:auto;background:none;font-size:9px;color:#74766f}
+.app-footer .footer-copy em{font-family:Georgia,serif;font-size:10px;color:#3f765e}
+.app-footer .footer-copy a{width:max-content;color:#3f765e;font-size:9px;font-weight:700;text-decoration:none}
+.app-footer .footer-copy a:hover{text-decoration:underline}
+.app-footer>.footer-product{grid-column:1/-1;justify-self:center;margin:0;font-size:8px;letter-spacing:.35px;color:#8f918a;text-align:center}
 
 @media(max-width:900px){
-  .app-footer{grid-template-columns:auto 1fr;gap:22px}
-  .app-footer>.footer-signature{grid-column:1/-1;justify-items:center;text-align:center}
+  .app-footer{column-gap:28px}
+  .app-footer>.footer-party{gap:14px}
+  .app-footer .footer-logo{height:54px;max-width:200px}
 }
 
 @media(max-width:720px){
-  .app-footer{grid-template-columns:1fr;justify-items:center;text-align:center;padding:28px 18px}
-  .app-footer>.footer-institution{justify-items:center}
-  .app-footer .footer-institution a{width:auto}
-  .app-footer>.footer-signature{grid-column:auto}
+  .app-footer{grid-template-columns:1fr;justify-items:center;padding:28px 18px 22px;row-gap:26px}
+  .app-footer>.footer-party{justify-self:center;flex-direction:column;gap:12px}
+  .app-footer>.footer-ifsc{flex-direction:column-reverse}
+  .app-footer .footer-copy-left,.app-footer .footer-copy-right{text-align:center;justify-items:center}
+  .app-footer .footer-copy a{width:auto}
+  .app-footer>.footer-product{grid-column:auto}
 }
