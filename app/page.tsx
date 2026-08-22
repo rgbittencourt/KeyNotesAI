@@ -1563,15 +1563,21 @@ export default function Home() {
         </div>
         <footer className="app-footer">
           <div className="footer-party footer-inovalab">
-            <img
-              className="footer-logo"
-              src="/inovalab-logo.png"
-              alt="INOVALAB IFSC Campus Continente"
-            />
+            <span className="footer-logo-frame footer-logo-inovalab">
+              <img
+                src="/inovalab-logo.png"
+                alt="INOVALAB IFSC Campus Continente"
+              />
+            </span>
             <div className="footer-copy footer-copy-left">
-              <strong>INOVALAB</strong>
-              <span>Laboratório de Inovação e Mídias Digitais</span>
-              <em>“Onde ideias se transformam em realidade.”</em>
+              <p className="footer-inovalab-title">INOVALAB</p>
+              <p>Laboratório de Inovação e Mídias Digitais</p>
+              <p className="footer-motto">
+                “Onde ideias se transformam em realidade.”
+              </p>
+              <p className="footer-product">
+                KeyNotesAI · Tecnologia que transforma conversa em ação.
+              </p>
             </div>
           </div>
           <div className="footer-party footer-ifsc">
@@ -1589,14 +1595,11 @@ export default function Home() {
               </a>
             </div>
             <img
-              className="footer-logo"
+              className="footer-logo footer-logo-ifsc"
               src="/ifsc-logo.png"
               alt="Instituto Federal de Santa Catarina"
             />
           </div>
-          <small className="footer-product">
-            KeyNotesAI · Tecnologia que transforma conversa em ação.
-          </small>
         </footer>
       </section>
       {recording && (
