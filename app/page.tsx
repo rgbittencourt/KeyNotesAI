@@ -1561,19 +1561,37 @@ export default function Home() {
             </>
           )}
         </div>
-        <footer>
-          <div>
+        <footer className="app-footer">
+          <div className="footer-logos" aria-label="Identidade institucional">
             <img
               src="/inovalab-logo.png"
               alt="INOVALAB IFSC Campus Continente"
             />
-            <span></span>
+            <span aria-hidden="true"></span>
             <img
               src="/ifsc-logo.png"
               alt="Instituto Federal de Santa Catarina"
             />
           </div>
-          <p>KeyNotesAI · Tecnologia que transforma conversa em ação.</p>
+          <div className="footer-institution">
+            <p>
+              <strong>Instituto Federal de Santa Catarina</strong> — Câmpus
+              Florianópolis-Continente
+            </p>
+            <p>
+              R. Quatorze de Julho, 150 — Coqueiros — Florianópolis — SC —
+              88075-010
+            </p>
+            <a href="mailto:inovalab.cte@ifsc.edu.br">
+              inovalab.cte@ifsc.edu.br
+            </a>
+          </div>
+          <div className="footer-signature">
+            <strong>INOVALAB</strong>
+            <span>Laboratório de Inovação e Mídias Digitais</span>
+            <em>“Onde ideias se transformam em realidade.”</em>
+            <small>KeyNotesAI · Tecnologia que transforma conversa em ação.</small>
+          </div>
         </footer>
       </section>
       {recording && (

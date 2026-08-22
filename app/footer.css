@@ -1,0 +1,28 @@
+/* Rodapé institucional — padrão visual dos PWAs INOVALAB */
+.app-footer{border-top:1px solid var(--line);background:#efede7;padding:28px 4.5% 26px;display:grid;grid-template-columns:auto minmax(320px,1fr) auto;align-items:center;gap:32px}
+.app-footer>.footer-logos{display:flex;align-items:center;gap:15px}
+.app-footer .footer-logos img:first-child{width:105px;height:40px;object-fit:cover;object-position:center}
+.app-footer .footer-logos img:last-child{width:72px;height:40px;object-fit:contain}
+.app-footer .footer-logos>span{height:28px;width:1px;background:#d2d0c8}
+.app-footer>.footer-institution{display:grid;gap:4px}
+.app-footer .footer-institution p{margin:0;font-size:9px;line-height:1.45;letter-spacing:.2px;color:#74766f}
+.app-footer .footer-institution strong{color:#3f413c}
+.app-footer .footer-institution a{width:max-content;color:#3f765e;font-size:9px;font-weight:700;text-decoration:none}
+.app-footer .footer-institution a:hover{text-decoration:underline}
+.app-footer>.footer-signature{display:grid;justify-items:end;gap:3px;text-align:right}
+.app-footer .footer-signature strong{font-size:10px;letter-spacing:1.2px;color:#262724}
+.app-footer .footer-signature span{width:auto;height:auto;background:none;font-size:8px;color:#777971}
+.app-footer .footer-signature em{font-family:Georgia,serif;font-size:10px;color:#3f765e}
+.app-footer .footer-signature small{margin-top:4px;font-size:8px;letter-spacing:.35px;color:#8f918a}
+
+@media(max-width:900px){
+  .app-footer{grid-template-columns:auto 1fr;gap:22px}
+  .app-footer>.footer-signature{grid-column:1/-1;justify-items:center;text-align:center}
+}
+
+@media(max-width:720px){
+  .app-footer{grid-template-columns:1fr;justify-items:center;text-align:center;padding:28px 18px}
+  .app-footer>.footer-institution{justify-items:center}
+  .app-footer .footer-institution a{width:auto}
+  .app-footer>.footer-signature{grid-column:auto}
+}
