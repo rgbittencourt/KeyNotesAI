@@ -35,6 +35,15 @@ async function init() {
         d.prepare(
           "CREATE TABLE IF NOT EXISTS google_drive_integrations (id TEXT PRIMARY KEY, account_email TEXT NOT NULL, encrypted_refresh_token TEXT NOT NULL, root_folder_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
         ),
+        d.prepare(
+          "CREATE TABLE IF NOT EXISTS trello_settings (id TEXT PRIMARY KEY, board_id TEXT NOT NULL, board_name TEXT NOT NULL, list_id TEXT NOT NULL, list_name TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        ),
+        d.prepare(
+          "CREATE TABLE IF NOT EXISTS trello_exports (id TEXT PRIMARY KEY, email TEXT NOT NULL, local_meeting_id TEXT NOT NULL, card_id TEXT NOT NULL, card_url TEXT NOT NULL, checklist_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (email) REFERENCES app_users(email) ON DELETE CASCADE)",
+        ),
+        d.prepare(
+          "CREATE UNIQUE INDEX IF NOT EXISTS idx_trello_exports_meeting ON trello_exports(email,local_meeting_id)",
+        ),
       ]);
     })();
   return initialized;

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type MeetingDecision } from "./local-processing";
+import { type MeetingAction, type MeetingDecision } from "./local-processing";
 import { analyzeTranscriptSemantically } from "./semantic-processing";
 import {
   transcribeAudioInChunks,
@@ -52,6 +52,7 @@ export default function RealFeatureView(p: Props) {
     [transcribing, setTranscribing] = useState(false),
     [analyzing, setAnalyzing] = useState(false),
     [archivingDrive, setArchivingDrive] = useState(false),
+    [syncingTrello, setSyncingTrello] = useState(false),
     [driveStatus, setDriveStatus] = useState(""),
     [cameraOpen, setCameraOpen] = useState(false),
     [cameraError, setCameraError] = useState(""),
@@ -247,6 +248,20 @@ export default function RealFeatureView(p: Props) {
     } finally {
       setArchivingDrive(false);
     }
+  }
+  async function syncSelectedToTrello() {
+    if (!selected || syncingTrello) return;
+    setSyncingTrello(true);
+    try {
+      const { meetingPhotoBlob: _photo, meetingPhotoUrl: _photoUrl, url: _audioUrl, ...meeting } = selected;
+      const response = await fetch("/api/trello/sync-meeting", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(meeting) });
+      const body = await response.json() as { error?: string; cardId?: string; cardUrl?: string; syncedAt?: string; created?: boolean };
+      if (!response.ok || !body.cardUrl) throw new Error(body.error || "Não foi possível sincronizar com o Trello.");
+      await p.updateRecording(selected.id, { trelloCardId: body.cardId, trelloCardUrl: body.cardUrl, trelloSyncedAt: body.syncedAt || new Date().toISOString() });
+      p.notify(body.created ? "Card da reunião criado no Trello" : "Mesmo card atualizado no Trello");
+    } catch (error) {
+      p.notify(error instanceof Error ? error.message : "Falha ao sincronizar com o Trello");
+    } finally { setSyncingTrello(false); }
   }
   async function saveMeetingPhoto(file?: File) {
     if (!selected || !file) return;
@@ -802,14 +817,14 @@ export default function RealFeatureView(p: Props) {
           </div>
           <button
             className="primary-btn"
-            onClick={() =>
-              p.notify("Conecte o Trello quando a API Key estiver disponível")
-            }
+            onClick={syncSelectedToTrello}
+            disabled={!selected || syncingTrello}
           >
-            Sincronizar com Trello
+            {syncingTrello ? "Sincronizando…" : selected?.trelloCardUrl ? "Atualizar no Trello" : "Sincronizar com Trello"}
           </button>
         </div>
         <article className="card matrix-full">
+          {selected?.trelloCardUrl && <div className="trello-sync-result"><span>✓ Esta reunião está vinculada a um único card.</span><a href={selected.trelloCardUrl} target="_blank" rel="noreferrer">Abrir card no Trello ↗</a></div>}
           {allActions.length === 0 ? (
             <Empty text="Nenhuma ação identificada nas reuniões processadas" />
           ) : (

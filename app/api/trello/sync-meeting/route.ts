@@ -1,0 +1,3 @@
+import{accessError,requireAccess}from"../../../server-access";
+import{syncMeeting,type TrelloMeeting}from"../../../trello";
+export async function POST(request:Request){try{const user=await requireAccess(),meeting=await request.json()as TrelloMeeting;if(!meeting?.id||!meeting.name?.trim())return Response.json({error:"Reunião inválida."},{status:400});return Response.json(await syncMeeting(user.email,meeting));}catch(error){if(error instanceof Response)return accessError(error);console.error("Trello sync failed",error);return Response.json({error:error instanceof Error?error.message:"Não foi possível sincronizar com o Trello."},{status:502})}}

@@ -16,6 +16,7 @@ type DriveStatus = {
   rootFolderUrl: string;
   credentialsReady: boolean;
 };
+type TrelloStatus={credentialsReady:boolean;configured:boolean;settings?:{boardName:string;listName:string}|null};
 
 export type DeviceRecording = {
   id: number;
@@ -45,6 +46,9 @@ export type DeviceRecording = {
   driveFolderId?: string;
   driveFiles?: Array<{ id: string; name: string; webViewLink: string }>;
   driveSyncedAt?: string;
+  trelloCardId?: string;
+  trelloCardUrl?: string;
+  trelloSyncedAt?: string;
   meetingPhotoBlob?: Blob;
   meetingPhotoUrl?: string;
   meetingPhotoName?: string;
@@ -682,6 +686,7 @@ export default function Home() {
   const [listeningParticipant, setListeningParticipant] = useState(false);
   const [driveIntegration, setDriveIntegration] =
     useState<DriveStatus | null>(null);
+  const [trelloIntegration,setTrelloIntegration]=useState<TrelloStatus|null>(null);
   useEffect(() => {
     fetch("/api/session")
       .then(async (r) => (r.ok ? (await r.json()).user : null))
@@ -697,6 +702,7 @@ export default function Home() {
       .then(setDriveIntegration)
       .catch(() => setDriveIntegration(null));
   }, [session]);
+  useEffect(()=>{if(!session)return;fetch("/api/trello/status").then(async response=>response.ok?(await response.json() as TrelloStatus):null).then(setTrelloIntegration).catch(()=>setTrelloIntegration(null))},[session,active]);
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
@@ -1088,14 +1094,14 @@ export default function Home() {
         </nav>
         <div className="sidebar-bottom">
           <p>INTEGRAÇÕES</p>
-          <button onClick={() => notify("Configuração do Trello aberta")}>
+          <button onClick={() => session.role==="admin"?setActive("Administração"):notify("Trello gerenciado pelo Admin do INOVALAB")}>
             <img
               className="integration-logo"
               src="/trello-logo.png"
               alt="Trello"
             />
             <span>
-              Trello<small>Conectado</small>
+              Trello<small>{trelloIntegration?.configured?"Conectado":trelloIntegration?.credentialsReady?"Selecionar destino":"Configurando"}</small>
             </span>
             <i>•••</i>
           </button>
