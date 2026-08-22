@@ -703,7 +703,7 @@ export default function Home() {
       .then(setDriveIntegration)
       .catch(() => setDriveIntegration(null));
   }, [session]);
-  useEffect(()=>{if(!session)return;fetch("/api/trello/status").then(async response=>response.ok?(await response.json() as TrelloStatus):null).then(setTrelloIntegration).catch(()=>setTrelloIntegration(null))},[session,active]);
+  useEffect(()=>{if(!session)return;const load=()=>fetch("/api/trello/status").then(async response=>response.ok?(await response.json() as TrelloStatus):null).then(setTrelloIntegration).catch(()=>setTrelloIntegration(null));void load();window.addEventListener("keynotesai:trello-configured",load);return()=>window.removeEventListener("keynotesai:trello-configured",load)},[session,active]);
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
