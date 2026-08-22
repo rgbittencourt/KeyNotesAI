@@ -238,9 +238,18 @@ export default function RealFeatureView(p: Props) {
       const response = await fetch("/api/drive/archive-meeting", { method: "POST", body: form });
       const body = await response.json() as { error?: string; folder?: { id: string; webViewLink: string }; files?: Array<{ id: string; name: string; webViewLink: string }>; createdAt?: string };
       if (!response.ok || !body.folder) throw new Error(body.error || "Não foi possível arquivar no Drive.");
-      await p.updateRecording(selected.id, { driveFolderId: body.folder.id, driveFolderUrl: body.folder.webViewLink, driveFiles: body.files || [], driveSyncedAt: body.createdAt || new Date().toISOString() });
-      setDriveStatus(selected.driveFolderUrl ? "Pasta existente atualizada no Google Drive" : "Reunião arquivada no Google Drive");
-      p.notify(selected.driveFolderUrl ? "Arquivos atualizados na mesma pasta do Drive" : "Reunião e documentos salvos no Drive");
+      const drivePatch = { driveFolderId: body.folder.id, driveFolderUrl: body.folder.webViewLink, driveFiles: body.files || [], driveSyncedAt: body.createdAt || new Date().toISOString() };
+      await p.updateRecording(selected.id, drivePatch);
+      const updatedMeeting = { ...selected, ...drivePatch };
+      try {
+        const trello = await syncMeetingToTrello(updatedMeeting);
+        setDriveStatus(selected.driveFolderUrl ? "Drive atualizado e mesmo card atualizado no Trello" : "Reunião arquivada no Drive e card criado no Trello");
+        p.notify(trello.created ? "Drive salvo e card criado no Trello" : "Drive e card do Trello atualizados");
+      } catch (trelloError) {
+        const detail = trelloError instanceof Error ? trelloError.message : "Falha no Trello";
+        setDriveStatus(`Drive salvo. Trello pendente: ${detail}`);
+        p.notify("Drive salvo; não foi possível atualizar o Trello");
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao salvar no Google Drive";
       setDriveStatus(message);
@@ -249,15 +258,19 @@ export default function RealFeatureView(p: Props) {
       setArchivingDrive(false);
     }
   }
+  async function syncMeetingToTrello(recording: DeviceRecording) {
+    const { meetingPhotoBlob: _photo, meetingPhotoUrl: _photoUrl, url: _audioUrl, ...meeting } = recording;
+    const response = await fetch("/api/trello/sync-meeting", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(meeting) });
+    const body = await response.json() as { error?: string; cardId?: string; cardUrl?: string; syncedAt?: string; created?: boolean };
+    if (!response.ok || !body.cardUrl) throw new Error(body.error || "Não foi possível sincronizar com o Trello.");
+    await p.updateRecording(recording.id, { trelloCardId: body.cardId, trelloCardUrl: body.cardUrl, trelloSyncedAt: body.syncedAt || new Date().toISOString() });
+    return body;
+  }
   async function syncSelectedToTrello() {
     if (!selected || syncingTrello) return;
     setSyncingTrello(true);
     try {
-      const { meetingPhotoBlob: _photo, meetingPhotoUrl: _photoUrl, url: _audioUrl, ...meeting } = selected;
-      const response = await fetch("/api/trello/sync-meeting", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(meeting) });
-      const body = await response.json() as { error?: string; cardId?: string; cardUrl?: string; syncedAt?: string; created?: boolean };
-      if (!response.ok || !body.cardUrl) throw new Error(body.error || "Não foi possível sincronizar com o Trello.");
-      await p.updateRecording(selected.id, { trelloCardId: body.cardId, trelloCardUrl: body.cardUrl, trelloSyncedAt: body.syncedAt || new Date().toISOString() });
+      const body = await syncMeetingToTrello(selected);
       p.notify(body.created ? "Card da reunião criado no Trello" : "Mesmo card atualizado no Trello");
     } catch (error) {
       p.notify(error instanceof Error ? error.message : "Falha ao sincronizar com o Trello");
