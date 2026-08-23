@@ -998,7 +998,8 @@ export default function Home() {
             </p>
           </div>
           <div className="cover-maker">
-            <small>DESENVOLVIDO PELO</small>
+            <small>DESENVOLVIDO POR</small>
+            <p className="cover-developer">Prof. Rogério G. Bittencourt</p>
             <div>
               <img src="/inovalab-mark.png" alt="" />
               <strong>INOVALAB</strong>

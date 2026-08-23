@@ -36,3 +36,11 @@
   .app-footer .footer-copy-left,.app-footer .footer-copy-right{text-align:center;justify-items:center}
   .app-footer .footer-copy a{width:auto}
 }
+
+/* Crédito autoral na capa de acesso */
+.cover-maker .cover-developer{margin:8px 0 0;font-size:13px;font-weight:650;letter-spacing:.2px;color:#fff}
+.cover-maker>p:not(.cover-developer){font-size:10px;color:#9da5b8;margin:8px 0 0 46px}
+
+@media(max-width:520px){
+  .cover-maker .cover-developer{font-size:12px}
+}
