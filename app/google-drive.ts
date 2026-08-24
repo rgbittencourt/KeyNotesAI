@@ -1,4 +1,5 @@
 import { DRIVE_ROOT_FOLDER_ID, getDriveAccessToken } from "./google-drive-oauth";
+import { buildStandaloneMindMapSvg } from "./mind-map-svg";
 const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
 
 type DriveFile = { id: string; name: string; mimeType?: string; webViewLink: string };
@@ -114,14 +115,13 @@ function documents(meeting: DriveMeeting) {
   const actionTable = actionRows ? `<table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Ação</th><th>Responsável</th><th>Prazo</th><th>Prioridade</th></tr></thead><tbody>${actionRows}</tbody></table>` : "<p>Nenhuma ação identificada.</p>";
   const fallbackBranches = (meeting.themes || []).map((topic) => ({ topic, summary: "Tópico identificado na análise anterior.", subtopics: ["Reanalise a reunião para detalhar este ramo automaticamente."] }));
   const mindMap = meeting.mindMap || { title: meeting.name, branches: fallbackBranches };
-  const colors = ["#3f765e", "#a4773b", "#526d89", "#8a5e78", "#668548", "#a15f4d"];
-  const mindMapHtml = `<div style="margin:18px auto 28px;max-width:70%;padding:18px;border:4px solid #3f765e;border-radius:18px;text-align:center;background:#eef5f0"><small>TEMA CENTRAL</small><h2>${escapeHtml(mindMap.title)}</h2></div>${mindMap.branches.map((branch, index) => `<div style="margin:12px 0;padding:12px 16px;border-left:7px solid ${colors[index % colors.length]};background:#f7f8f6"><h3 style="margin:0;color:${colors[index % colors.length]}">${escapeHtml(branch.topic)}</h3><p>${escapeHtml(branch.summary)}</p>${list(branch.subtopics, "Nenhum subtópico identificado.")}</div>`).join("")}<p><small>Mapa mental gerado automaticamente a partir de toda a transcrição.</small></p>`;
+  const mindMapSvg = buildStandaloneMindMapSvg(mindMap);
   return [
     { name: "01 - Ata da reunião", html: documentShell("Ata da reunião", meeting, `<h3>Participantes</h3>${list(participants, "Não informados.")}<h3>Pauta</h3>${list(agenda, "Não informada.")}<h3>Síntese</h3><p>${escapeHtml(meeting.summary || "")}</p><h3>Decisões</h3>${list(decisions.map((x) => x.text || ""), "Nenhuma decisão explícita.")}<h3>Encaminhamentos</h3>${actionTable}<h3>Pendências e bloqueios</h3>${list(pending.map((x) => `${x.kind}: ${x.text}`), "Nenhum registro.")}`) },
     { name: "02 - Resumo executivo", html: documentShell("Resumo executivo", meeting, `<p>${escapeHtml(meeting.summary || "")}</p><h3>Temas centrais</h3>${list(meeting.themes || [], "Nenhum tema identificado.")}<h3>Decisões-chave</h3>${list(decisions.map((x) => x.text || ""), "Nenhuma decisão explícita.")}`) },
     { name: "03 - Plano de ação", html: documentShell("Plano de ação", meeting, actionTable) },
     { name: "04 - Decisões, pendências e bloqueios", html: documentShell("Decisões, pendências e bloqueios", meeting, `<h3>Decisões</h3>${list(decisions.map((x) => x.text || ""), "Nenhuma decisão explícita.")}<h3>Pendências e bloqueios</h3>${list(pending.map((x) => `${x.kind}: ${x.text}`), "Nenhum registro.")}`) },
-    { name: "05 - Mapa mental automático", html: documentShell("Mapa mental automático", meeting, mindMapHtml) },
+    { name: "05 - Mapa mental automático.svg", html: mindMapSvg, raw: true },
     { name: "06 - Transcrição", html: documentShell("Transcrição", meeting, `<p style="white-space:pre-wrap">${escapeHtml(meeting.transcript || "Transcrição não disponível.")}</p>`) },
   ];
 }
@@ -134,7 +134,7 @@ export async function archiveMeetingInDrive(meeting: DriveMeeting, audio?: File 
   const folder = existingFolderId
     ? { id: existingFolderId, name: folderName, mimeType: "application/vnd.google-apps.folder", webViewLink: `https://drive.google.com/drive/folders/${existingFolderId}` }
     : await createFolder(token, folderName, root);
-  const generated = await Promise.all(documents(meeting).map((doc) => upload(token, folder.id, doc.name, new Blob([doc.html], { type: "text/html;charset=utf-8" }), GOOGLE_DOC_MIME)));
+  const generated = await Promise.all(documents(meeting).map((doc) => upload(token, folder.id, doc.name, new Blob([doc.html], { type: doc.raw ? "image/svg+xml;charset=utf-8" : "text/html;charset=utf-8" }), doc.raw ? undefined : GOOGLE_DOC_MIME)));
   const files = [...generated];
   if (audio?.size) files.push(await upload(token, folder.id, `00 - Gravação - ${safeName(meeting.name)}.${audio.type.includes("mpeg") ? "mp3" : audio.type.includes("mp4") ? "m4a" : "webm"}`, audio));
   if (photo?.size) {
