@@ -19,7 +19,12 @@ async function trelloFetch<T>(path:string,init?:RequestInit){
 }
 export async function trelloStatus(){
  const row=await(await getRawDb()).prepare("SELECT board_id boardId,board_name boardName,list_id listId,list_name listName,updated_at updatedAt FROM trello_settings WHERE id='inovalab'").first<TrelloSettings>();
- return{credentialsReady:Boolean(process.env.TRELLO_API_KEY&&process.env.TRELLO_TOKEN),configured:Boolean(row),settings:row||null};
+ const credentialsReady=Boolean(process.env.TRELLO_API_KEY&&process.env.TRELLO_TOKEN);
+ let boardUrl:string|null=row?`https://trello.com/b/${encodeURIComponent(row.boardId)}`:null;
+ if(row&&credentialsReady){
+  try{const board=await trelloFetch<{url?:string}>(`/boards/${encodeURIComponent(row.boardId)}?fields=url`);boardUrl=board.url||boardUrl}catch{/* Mantém a URL direta como fallback. */}
+ }
+ return{credentialsReady,configured:Boolean(row),settings:row||null,boardUrl};
 }
 export async function listBoards(){return trelloFetch<Array<{id:string;name:string;url:string}>>("/members/me/boards?fields=name,url&filter=open");}
 export async function listLists(boardId:string){return trelloFetch<Array<{id:string;name:string;closed:boolean}>>(`/boards/${encodeURIComponent(boardId)}/lists?fields=name,closed&filter=open`);}

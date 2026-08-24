@@ -18,7 +18,7 @@ type DriveStatus = {
   rootFolderUrl: string;
   credentialsReady: boolean;
 };
-type TrelloStatus={credentialsReady:boolean;configured:boolean;settings?:{boardName:string;listName:string}|null};
+type TrelloStatus={credentialsReady:boolean;configured:boolean;settings?:{boardName:string;listName:string}|null;boardUrl?:string|null};
 
 export type DeviceRecording = {
   id: number;
@@ -1407,13 +1407,15 @@ export default function Home() {
                       <small>12 cards atualizados hoje</small>
                     </div>
                   </div>
-                  <button
-                    onClick={() =>
-                      notify("Abrindo quadro KeyNotesAI no Trello")
-                    }
-                  >
-                    Abrir quadro no Trello <span>↗</span>
-                  </button>
+                  {trelloIntegration?.boardUrl ? (
+                    <a className="trello-board-link" href={trelloIntegration.boardUrl} target="_blank" rel="noopener noreferrer" style={{position:"relative",zIndex:1,display:"block",width:"100%",border:"1px solid #565751",color:"#fff",padding:"10px",borderRadius:"6px",fontSize:"9px",fontWeight:700,textAlign:"center",textDecoration:"none"}}>
+                      Abrir quadro no Trello <span style={{float:"right"}}>↗</span>
+                    </a>
+                  ) : (
+                    <button onClick={() => notify("Selecione primeiro o Quadro e a Lista no menu Trello")}>
+                      Selecionar quadro no Trello <span>↗</span>
+                    </button>
+                  )}
                 </div>
               </section>
               <section className="metrics">
