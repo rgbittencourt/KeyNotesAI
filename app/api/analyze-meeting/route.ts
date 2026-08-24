@@ -1,17 +1,18 @@
 import{accessError,consumeUsage,refundUsage,requireAccess}from"../../server-access";
 
 const analysisSchema={
- type:"object",additionalProperties:false,required:["summary","themes","actions","decisions"],properties:{
+ type:"object",additionalProperties:false,required:["summary","themes","mindMap","actions","decisions"],properties:{
   summary:{type:"string",description:"Síntese executiva fiel, temática e não cronológica, em dois a quatro parágrafos."},
   themes:{type:"array",maxItems:8,items:{type:"string"}},
+  mindMap:{type:"object",additionalProperties:false,required:["title","branches"],properties:{title:{type:"string",description:"Título central curto e representativo da conversa ou aula."},branches:{type:"array",minItems:2,maxItems:8,items:{type:"object",additionalProperties:false,required:["topic","summary","subtopics"],properties:{topic:{type:"string",description:"Tópico principal curto."},summary:{type:"string",description:"Explicação concisa do tópico."},subtopics:{type:"array",minItems:1,maxItems:6,items:{type:"string"}}}}}}},
   actions:{type:"array",maxItems:30,items:{type:"object",additionalProperties:false,required:["task","person","due","priority","evidence","confidence"],properties:{task:{type:"string"},person:{type:"string"},due:{type:"string"},priority:{type:"string",enum:["Alta","Média","Baixa"]},evidence:{type:"string"},confidence:{type:"number",minimum:0,maximum:1}}}},
   decisions:{type:"array",maxItems:30,items:{type:"object",additionalProperties:false,required:["text","kind","evidence","person","due","confidence"],properties:{text:{type:"string"},kind:{type:"string",enum:["decisão","pendência","bloqueio"]},evidence:{type:"string"},person:{type:"string"},due:{type:"string"},confidence:{type:"number",minimum:0,maximum:1}}}}
  }
 }as const;
 
-const instructions=`Você é um analista de reuniões em português brasileiro. Analise somente a transcrição fornecida. Produza uma síntese temática: selecione assuntos materialmente importantes, resultados, argumentos e consequências; não resuma apenas o começo nem siga a ordem cronológica. Diferencie rigorosamente decisão confirmada, sugestão, pergunta, intenção, pendência e bloqueio. Uma ação exige compromisso ou encaminhamento suficientemente claro. Extraia responsável e prazo somente quando sustentados pelo texto; caso contrário use exatamente "A confirmar" e "Sem prazo". Cada item deve conter uma evidência curta copiada ou minimamente normalizada da transcrição e confiança entre 0 e 1. Não transforme frases negadas, hipóteses ou exemplos em fatos. Não invente nomes, datas, valores ou conclusões. Una duplicatas e preserve divergências relevantes.`;
+const instructions=`Você é um analista de reuniões, conversas e aulas em português brasileiro. Analise somente a transcrição fornecida. Produza uma síntese temática: selecione assuntos materialmente importantes, resultados, argumentos e consequências; não resuma apenas o começo nem siga a ordem cronológica. Gere também um mapa mental hierárquico abrangente: um título central curto, de dois a oito tópicos principais e, para cada tópico, uma explicação concisa e subtópicos que cubram conceitos, argumentos, exemplos, relações, conclusões e dúvidas relevantes encontrados ao longo de toda a transcrição. Organize por afinidade semântica, elimine repetições e use frases curtas próprias para leitura visual. Não limite o mapa a decisões e tarefas. Diferencie rigorosamente decisão confirmada, sugestão, pergunta, intenção, pendência e bloqueio. Uma ação exige compromisso ou encaminhamento suficientemente claro. Extraia responsável e prazo somente quando sustentados pelo texto; caso contrário use exatamente "A confirmar" e "Sem prazo". Cada item deve conter uma evidência curta copiada ou minimamente normalizada da transcrição e confiança entre 0 e 1. Não transforme frases negadas, hipóteses ou exemplos em fatos. Não invente nomes, datas, valores ou conclusões. Una duplicatas e preserve divergências relevantes.`;
 
-type AnalysisResult={summary:string;themes:string[];actions:Array<{task:string;person:string;due:string;priority:"Alta"|"Média"|"Baixa";evidence:string;confidence:number}>;decisions:Array<{text:string;kind:"decisão"|"pendência"|"bloqueio";evidence:string;person:string;due:string;confidence:number}>};
+type AnalysisResult={summary:string;themes:string[];mindMap:{title:string;branches:Array<{topic:string;summary:string;subtopics:string[]}>};actions:Array<{task:string;person:string;due:string;priority:"Alta"|"Média"|"Baixa";evidence:string;confidence:number}>;decisions:Array<{text:string;kind:"decisão"|"pendência"|"bloqueio";evidence:string;person:string;due:string;confidence:number}>};
 
 const isText=(value:unknown):value is string=>typeof value==="string"&&value.trim().length>0;
 const isConfidence=(value:unknown)=>typeof value==="number"&&Number.isFinite(value)&&value>=0&&value<=1;
@@ -19,7 +20,7 @@ const isConfidence=(value:unknown)=>typeof value==="number"&&Number.isFinite(val
 function isAnalysisResult(value:unknown):value is AnalysisResult{
  if(!value||typeof value!=="object")return false;
  const item=value as Partial<AnalysisResult>;
- return isText(item.summary)&&Array.isArray(item.themes)&&item.themes.every(isText)&&
+ return isText(item.summary)&&Array.isArray(item.themes)&&item.themes.every(isText)&&item.mindMap!=null&&isText(item.mindMap.title)&&Array.isArray(item.mindMap.branches)&&item.mindMap.branches.length>=2&&item.mindMap.branches.every(branch=>branch&&isText(branch.topic)&&isText(branch.summary)&&Array.isArray(branch.subtopics)&&branch.subtopics.length>=1&&branch.subtopics.every(isText))&&
   Array.isArray(item.actions)&&item.actions.every(action=>action&&isText(action.task)&&isText(action.person)&&isText(action.due)&&["Alta","Média","Baixa"].includes(action.priority)&&isText(action.evidence)&&isConfidence(action.confidence))&&
   Array.isArray(item.decisions)&&item.decisions.every(decision=>decision&&isText(decision.text)&&["decisão","pendência","bloqueio"].includes(decision.kind)&&isText(decision.evidence)&&isText(decision.person)&&isText(decision.due)&&isConfidence(decision.confidence));
 }

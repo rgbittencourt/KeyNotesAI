@@ -1,6 +1,8 @@
 export type MeetingAction={id:string;task:string;person:string;due:string;priority:"Alta"|"Média"|"Baixa";done:boolean;evidence?:string;confidence?:number};
 export type MeetingDecision={id?:string;text:string;kind:"decisão"|"pendência"|"bloqueio";evidence?:string;person?:string;due?:string;resolved?:boolean;confidence?:number};
-export type MeetingAnalysis={summary:string;minutes:string;actions:MeetingAction[];decisions:MeetingDecision[];themes?:string[];processedAt:string;processingMode?:"semantic"|"local"};
+export type MindMapBranch={topic:string;summary:string;subtopics:string[]};
+export type MindMap={title:string;branches:MindMapBranch[]};
+export type MeetingAnalysis={summary:string;minutes:string;actions:MeetingAction[];decisions:MeetingDecision[];themes?:string[];mindMap?:MindMap;processedAt:string;processingMode?:"semantic"|"local"};
 
 const sentences=(text:string)=>text.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean);
 

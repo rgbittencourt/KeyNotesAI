@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { type MeetingAction, type MeetingDecision } from "./local-processing";
+import type { MindMap } from "./local-processing";
 import RealFeatureView from "./real-feature-view";
 import AdminPanel from "./admin-panel";
 import TrelloIntegrationPanel from "./trello-integration-panel";
@@ -34,6 +35,7 @@ export type DeviceRecording = {
   transcript?: string;
   summary?: string;
   themes?: string[];
+  mindMap?: MindMap;
   minutes?: string;
   actions?: MeetingAction[];
   decisions?: MeetingDecision[];

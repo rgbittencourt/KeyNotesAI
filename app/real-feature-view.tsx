@@ -798,7 +798,11 @@ export default function RealFeatureView(p: Props) {
                       }
                     />
                     <Doc
-                      title="Mapa conceitual"
+                      title={
+                        selected.mindMap
+                          ? "Mapa mental automático"
+                          : "Mapa mental automático · reanalisar para detalhar"
+                      }
                       onClick={() =>
                         openProfessionalDocument(selected, "mapa")
                       }
