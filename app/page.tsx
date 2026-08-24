@@ -38,7 +38,7 @@ export type DeviceRecording = {
   actions?: MeetingAction[];
   decisions?: MeetingDecision[];
   documentOverrides?: Partial<
-    Record<"ata" | "resumo" | "acoes" | "decisoes", string>
+    Record<"ata" | "resumo" | "acoes" | "decisoes" | "mapa", string>
   >;
   processedAt?: string;
   processingMode?: "semantic" | "local";

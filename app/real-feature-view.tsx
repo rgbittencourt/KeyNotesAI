@@ -81,10 +81,15 @@ export default function RealFeatureView(p: Props) {
       const recording = p.recordings.find(
           (r) => r.id === event.data.recordingId,
         ),
-        kind = event.data.kind as "ata" | "resumo" | "acoes" | "decisoes";
+        kind = event.data.kind as
+          | "ata"
+          | "resumo"
+          | "acoes"
+          | "decisoes"
+          | "mapa";
       if (
         !recording ||
-        !["ata", "resumo", "acoes", "decisoes"].includes(kind) ||
+        !["ata", "resumo", "acoes", "decisoes", "mapa"].includes(kind) ||
         typeof event.data.html !== "string"
       )
         return;
@@ -790,6 +795,12 @@ export default function RealFeatureView(p: Props) {
                       title="Decisões e bloqueios"
                       onClick={() =>
                         openProfessionalDocument(selected, "decisoes")
+                      }
+                    />
+                    <Doc
+                      title="Mapa conceitual"
+                      onClick={() =>
+                        openProfessionalDocument(selected, "mapa")
                       }
                     />
                   </div>

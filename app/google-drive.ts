@@ -111,12 +111,15 @@ function documents(meeting: DriveMeeting) {
   const pending = (meeting.decisions || []).filter((x) => x.kind !== "decisão");
   const actionRows = (meeting.actions || []).map((a) => `<tr><td>${escapeHtml(a.task || "")}</td><td>${escapeHtml(a.person || "A confirmar")}</td><td>${escapeHtml(a.due || "Sem prazo")}</td><td>${escapeHtml(a.priority || "")}</td></tr>`).join("");
   const actionTable = actionRows ? `<table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>Ação</th><th>Responsável</th><th>Prazo</th><th>Prioridade</th></tr></thead><tbody>${actionRows}</tbody></table>` : "<p>Nenhuma ação identificada.</p>";
+  const conceptColumn = (title: string, color: string, items: string[], empty: string) => `<td style="width:33%;vertical-align:top;padding:8px"><h3 style="margin:0 0 8px;padding:8px;background:${color};color:white;text-align:center">${escapeHtml(title)}</h3>${items.length ? items.map((item) => `<p style="padding:8px;border:1px solid #dfe4df;border-radius:6px;text-align:center">${escapeHtml(item)}</p>`).join("") : `<p>${escapeHtml(empty)}</p>`}</td>`;
+  const conceptMap = `<div style="margin:18px auto 28px;max-width:75%;padding:16px;border:3px solid #3f765e;border-radius:12px;text-align:center;background:#eef5f0"><small>REUNIÃO</small><h2>${escapeHtml(meeting.name)}</h2><p>${escapeHtml(meeting.summary || "Síntese ainda não disponível.")}</p></div><table style="width:100%;border-collapse:separate;border-spacing:10px"><tr>${conceptColumn("Temas centrais", "#3f765e", (meeting.themes || []).slice(0, 6), "Nenhum tema identificado.")}${conceptColumn("Decisões", "#997441", decisions.slice(0, 5).map((x) => x.text || ""), "Nenhuma decisão explícita.")}${conceptColumn("Próximos passos", "#52657a", (meeting.actions || []).slice(0, 5).map((x) => `${x.task || "Ação"} — ${x.person || "Responsável a confirmar"}`), "Nenhuma ação identificada.")}</tr></table>`;
   return [
     { name: "01 - Ata da reunião", html: documentShell("Ata da reunião", meeting, `<h3>Participantes</h3>${list(participants, "Não informados.")}<h3>Pauta</h3>${list(agenda, "Não informada.")}<h3>Síntese</h3><p>${escapeHtml(meeting.summary || "")}</p><h3>Decisões</h3>${list(decisions.map((x) => x.text || ""), "Nenhuma decisão explícita.")}<h3>Encaminhamentos</h3>${actionTable}<h3>Pendências e bloqueios</h3>${list(pending.map((x) => `${x.kind}: ${x.text}`), "Nenhum registro.")}`) },
     { name: "02 - Resumo executivo", html: documentShell("Resumo executivo", meeting, `<p>${escapeHtml(meeting.summary || "")}</p><h3>Temas centrais</h3>${list(meeting.themes || [], "Nenhum tema identificado.")}<h3>Decisões-chave</h3>${list(decisions.map((x) => x.text || ""), "Nenhuma decisão explícita.")}`) },
     { name: "03 - Plano de ação", html: documentShell("Plano de ação", meeting, actionTable) },
     { name: "04 - Decisões, pendências e bloqueios", html: documentShell("Decisões, pendências e bloqueios", meeting, `<h3>Decisões</h3>${list(decisions.map((x) => x.text || ""), "Nenhuma decisão explícita.")}<h3>Pendências e bloqueios</h3>${list(pending.map((x) => `${x.kind}: ${x.text}`), "Nenhum registro.")}`) },
-    { name: "05 - Transcrição", html: documentShell("Transcrição", meeting, `<p style="white-space:pre-wrap">${escapeHtml(meeting.transcript || "Transcrição não disponível.")}</p>`) },
+    { name: "05 - Mapa conceitual", html: documentShell("Mapa conceitual", meeting, conceptMap) },
+    { name: "06 - Transcrição", html: documentShell("Transcrição", meeting, `<p style="white-space:pre-wrap">${escapeHtml(meeting.transcript || "Transcrição não disponível.")}</p>`) },
   ];
 }
 
@@ -133,7 +136,7 @@ export async function archiveMeetingInDrive(meeting: DriveMeeting, audio?: File 
   if (audio?.size) files.push(await upload(token, folder.id, `00 - Gravação - ${safeName(meeting.name)}.${audio.type.includes("mpeg") ? "mp3" : audio.type.includes("mp4") ? "m4a" : "webm"}`, audio));
   if (photo?.size) {
     const extension = photo.type.includes("png") ? "png" : photo.type.includes("webp") ? "webp" : photo.type.includes("heic") ? "heic" : "jpg";
-    files.push(await upload(token, folder.id, `06 - Foto da reunião - ${safeName(meeting.name)}.${extension}`, photo));
+    files.push(await upload(token, folder.id, `07 - Foto da reunião - ${safeName(meeting.name)}.${extension}`, photo));
   }
   if (existingFolderId && meeting.driveFiles?.length)
     await Promise.all(meeting.driveFiles.map((file) => trashFile(token, file.id)));
