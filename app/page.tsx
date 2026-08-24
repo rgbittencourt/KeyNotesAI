@@ -1297,9 +1297,16 @@ export default function Home() {
                 <>
                   <strong>Central de ajuda</strong>
                   <p>
-                    Grave na Visão geral. Depois encontre áudio, ata e
-                    relatórios em Arquivos.
+                    Consulte o Manual completo, incluindo Google Meet,
+                    documentos, Drive, Trello e administração.
                   </p>
+                  <button
+                    onClick={() =>
+                      window.open("/Manual-KeyNotesAI.pdf", "_blank", "noopener,noreferrer")
+                    }
+                  >
+                    Abrir Manual em PDF ↗
+                  </button>
                   <button
                     onClick={() => {
                       setActive("Arquivos");

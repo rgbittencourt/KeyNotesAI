@@ -89,7 +89,7 @@ p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER; p.paragraph_format
 p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER; p.paragraph_format.space_after=Pt(8); font(p.add_run('Manual completo do usuário'),25,True,INK,'Aptos Display')
 p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER; font(p.add_run('Do acesso à reunião, documentos, Google Drive e Trello'),12,False,GREEN)
 for _ in range(5): doc.add_paragraph()
-callout(doc,'Versão 1.0','Guia prático para usuários autorizados e administradores. Atualizado em 21/08/2026.')
+callout(doc,'Versão 1.1','Guia prático para usuários autorizados e administradores. Atualizado em 24/08/2026, com suporte ao Google Meet.')
 add_text(doc,'Acesse: keynotes-ai.rogerio-bittencourt.chatgpt.site',bold=True,color=GREEN,size=10,align=WD_ALIGN_PARAGRAPH.CENTER)
 
 page(doc); h(doc,'Comece por aqui',1)
@@ -97,7 +97,7 @@ add_text(doc,'O KeyNotesAI transforma uma reunião em registro pesquisável: gra
 for n,title,body in [
  (1,'Entrar','Acesse com a conta ChatGPT cujo e-mail foi previamente autorizado.'),
  (2,'Criar a reunião','Informe um título e escolha o processamento híbrido (padrão) ou totalmente OpenAI.'),
- (3,'Gravar ou importar','Grave no navegador ou importe um áudio existente.'),
+ (3,'Escolher a origem e gravar','Use Google Meet + microfone para reuniões on-line, somente microfone para encontros presenciais, ou importe um áudio existente.'),
  (4,'Completar o registro','Revise dados, participantes e, se desejar, adicione uma foto separada da ata.'),
  (5,'Transcrever e analisar','Revise a transcrição e gere resumo, ações, decisões e documentos.'),
  (6,'Ajustar responsabilidades','Defina responsável, prazo, prioridade e status das ações.'),
@@ -112,10 +112,25 @@ page(doc); h(doc,'Menu principal',2); add_text(doc,'Visão geral inicia reuniõe
 picture(doc,'02-visao-geral.png','Visão geral e menu lateral com as integrações conectadas.')
 
 page(doc); h(doc,'2. Criar, gravar ou importar uma reunião',1)
-h(doc,'Nova gravação',2); bullets(doc,['Na Visão geral, informe um título claro — ele identificará histórico, documentos, pasta e card.','Escolha o modo de processamento. O padrão é Híbrido.','Clique em “Iniciar reunião e gravar”.','Autorize o uso do microfone quando o navegador solicitar.','Durante a reunião, acompanhe o tempo e registre participantes quando necessário.','Ao terminar, encerre a gravação e aguarde o arquivo ser preparado.'],numbered=True)
+h(doc,'Nova gravação',2); bullets(doc,['Na Visão geral, informe um título claro — ele identificará histórico, documentos, pasta e card.','Escolha a origem do áudio: Google Meet + microfone (recomendado), somente Google Meet ou somente microfone.','Escolha o modo de processamento. O padrão é Híbrido.','Clique no botão para iniciar a gravação.','Autorize a captura solicitada pelo navegador.','Durante a reunião, acompanhe o tempo e registre participantes quando necessário.','Ao terminar, encerre a gravação e aguarde o arquivo ser preparado.'],numbered=True)
 h(doc,'Importar áudio',2); bullets(doc,['Clique em “Importar áudio”.','Selecione o arquivo salvo no computador.','Informe ou confirme o título e o modo de processamento.','Prossiga para a biblioteca em Arquivos.'])
 callout(doc,'Qual modo escolher?','Híbrido: padrão e menor custo; a transcrição é local e a OpenAI cuida da análise/documentos. Totalmente OpenAI: envia também o áudio para transcrição; costuma ser mais rápido e robusto, com custo adicional por minuto.')
 picture(doc,'03-reunioes.png','A área Reuniões exibe somente a reunião real em andamento.')
+
+page(doc); h(doc,'Google Meet: captura completa',1)
+add_text(doc,'Para registrar corretamente uma reunião on-line, abra o Google Meet e o KeyNotesAI no Chrome ou Edge. O modo recomendado combina o áudio remoto da aba com sua voz captada pelo microfone.',size=10.5)
+h(doc,'Google Meet + microfone (recomendado)',2)
+for n,title,body in [
+ (1,'Prepare as duas abas','Entre na reunião pelo Google Meet e mantenha o KeyNotesAI aberto em outra aba do mesmo navegador.'),
+ (2,'Escolha a origem','No KeyNotesAI, selecione “Google Meet + microfone (recomendado)”.'),
+ (3,'Inicie a gravação','Clique em “Gravar reunião do Google Meet”. O navegador abrirá a janela de compartilhamento.'),
+ (4,'Selecione a aba correta','Escolha especificamente a aba do Google Meet — não escolha uma janela ou a tela inteira.'),
+ (5,'Compartilhe o áudio','Marque “Compartilhar áudio da guia” e confirme. Sem essa opção, as vozes remotas não serão gravadas.'),
+ (6,'Autorize o microfone','Permita o acesso ao microfone para incluir sua própria voz com boa qualidade.'),
+ (7,'Finalize','Encerre no KeyNotesAI. Se você interromper o compartilhamento da aba, a gravação será encerrada e salva automaticamente.')]: step(doc,n,title,body)
+callout(doc,'Uso de fones','Recomendado no modo Google Meet + microfone: evita que o microfone recapture o som dos alto-falantes e reduz eco.')
+h(doc,'Outros modos',2); bullets(doc,['Google Meet — somente áudio da aba: grava os participantes remotos, mas pode não registrar bem sua voz local.','Presencial — somente microfone: indicado para pessoas reunidas fisicamente no mesmo ambiente.'])
+callout(doc,'Consentimento','Avise os participantes antes de iniciar e obtenha consentimento para gravação e processamento. O navegador sempre exige uma seleção manual da aba por segurança.')
 
 page(doc); h(doc,'3. Dados, participantes e foto',1)
 h(doc,'Completar os dados',2); bullets(doc,['Confirme título, data e hora.','Preencha setor/local, pauta e participantes, quando esses campos estiverem disponíveis.','Use nomes completos sempre que possível: isso melhora ata, ações e respostas do chat.'])
@@ -135,7 +150,7 @@ h(doc,'Documentos disponíveis',2)
 t=doc.add_table(rows=1,cols=2); t.alignment=WD_TABLE_ALIGNMENT.CENTER; t.autofit=False
 for c,w in zip(t.rows[0].cells,[2.0,4.5]): c.width=Inches(w); shade(c,GREEN); set_cell_margins(c)
 for c,txt in zip(t.rows[0].cells,['Documento','Uso recomendado']): font(c.paragraphs[0].add_run(txt),9.5,True,WHITE)
-for a,b in [('Ata','Registro formal do encontro, sem a foto.'),('Resumo executivo','Leitura rápida de contexto, temas e resultados.'),('Matriz de ações','O que será feito, por quem, até quando e com qual prioridade.'),('Decisões e bloqueios','Deliberações, pendências e impedimentos.')]:
+for a,b in [('Ata','Registro formal do encontro, sem a foto.'),('Resumo executivo','Leitura rápida de contexto, temas e resultados.'),('Matriz de ações','O que será feito, por quem, até quando e com qual prioridade.'),('Decisões e bloqueios','Deliberações, pendências e impedimentos.'),('Mapa mental','Estrutura visual automática dos temas e relações, em uma página A4 com fundo branco.')]:
     cells=t.add_row().cells
     for c,w in zip(cells,[2.0,4.5]): c.width=Inches(w); set_cell_margins(c)
     font(cells[0].paragraphs[0].add_run(a),9.2,True,GREEN); font(cells[1].paragraphs[0].add_run(b),9.2,False,INK)
@@ -158,13 +173,14 @@ page(doc); h(doc,'8. Google Drive',1)
 h(doc,'Arquivar ou atualizar',2); bullets(doc,['Conclua a transcrição, a análise e a revisão dos documentos.','Clique em “Arquivar no Drive” na primeira vez.','Nas próximas alterações, clique em “Atualizar no Drive”.','O sistema reutiliza a mesma pasta da reunião e atualiza os arquivos; não deve criar pastas duplicadas.','Após sucesso no Drive, a sincronização do Trello é iniciada automaticamente.'],numbered=True)
 callout(doc,'Destino institucional','Conta inovalab.cte@gmail.com → Meu Drive → 4. Arquivos → Reuniões - KeyNotesAI.')
 h(doc,'Padrão da pasta',2); add_text(doc,'aaaa-mm-dd : hh:mm - Título da Reunião',bold=True,color=GREEN,size=12)
-bullets(doc,['Áudio/gravação, quando incluído.','Transcrição e documentos gerados.','Foto da reunião, se cadastrada.','Links utilizáveis no card do Trello.'])
+bullets(doc,['Áudio/gravação, quando incluído.','Ata, resumo executivo, plano de ação, decisões e transcrição em PDF — sem conversão para Google Docs.','Mapa mental em formato vetorial, com fundo branco.','Foto da reunião, se cadastrada.','Links utilizáveis no card do Trello.'])
 callout(doc,'Se algo for editado','Salve no KeyNotesAI e execute “Atualizar no Drive”. A pasta existente é a fonte vigente; evite renomeá-la manualmente.')
 
 page(doc); h(doc,'9. Trello',1)
 h(doc,'Configuração administrativa',2); add_text(doc,'O destino atual é o quadro INOVALAB - “onde as ideias viram realidade”, lista Reuniões. O status “Conectado” e o destino aparecem em Integrações.')
 picture(doc,'15-trello-destino.png','Destino configurado no KeyNotesAI.')
 h(doc,'Quando o card é enviado?',2); bullets(doc,['Automaticamente: logo após arquivar ou atualizar a reunião no Google Drive com sucesso.','Manualmente: pelo botão “Sincronizar/Atualizar no Trello”, útil depois de ajustes que ainda não passaram pelo Drive.'])
+h(doc,'Abrir o quadro',2); add_text(doc,'Na Visão geral, clique em “Abrir quadro no Trello”. O botão utiliza a URL real do quadro escolhido em Integrações e abre o destino em uma nova aba. Se ainda não houver destino, o sistema orienta o administrador a selecionar Quadro e Lista.')
 h(doc,'O que vai no card',2); bullets(doc,['Título e identificação da reunião.','Resumo, decisões, ações, responsáveis, prazos e prioridades.','Links da pasta e dos arquivos no Google Drive.','Checklist das ações.'])
 callout(doc,'Sem duplicatas','Cada reunião usa um único card. Novas sincronizações atualizam o mesmo card, desde que o vínculo anterior seja preservado.')
 
@@ -188,6 +204,9 @@ for c,txt in zip(t.rows[0].cells,['Sintoma','O que fazer']): font(c.paragraphs[0
 problems=[
 ('Não consigo entrar','Confirme se o e-mail do ChatGPT é exatamente o cadastrado pelo administrador.'),
 ('Microfone não grava','Revise a permissão do navegador, selecione o microfone correto e recarregue a página.'),
+('Meet sem áudio remoto','Use Chrome/Edge, selecione a aba do Meet e marque “Compartilhar áudio da guia”. Não escolha tela inteira ou janela.'),
+('Minha voz não aparece','Use “Google Meet + microfone” e autorize o microfone. O modo somente aba pode não incluir sua voz local.'),
+('Gravação encerrou sozinha','Interromper o compartilhamento da aba encerra e salva a gravação automaticamente.'),
 ('“Tirar foto” abre arquivos','Use navegador/dispositivo com câmera disponível e permissão concedida; em desktop sem câmera compatível, use Selecionar arquivo.'),
 ('Transcrição fraca','Revise áudio, ruído e distância do microfone; corrija a transcrição antes da análise.'),
 ('Sem ações/decisões','Confirme que a reunião foi transcrita e analisada; compromissos precisam estar claros no texto.'),
@@ -201,8 +220,8 @@ for a,b in problems:
     font(cells[0].paragraphs[0].add_run(a),8.8,True,GREEN); font(cells[1].paragraphs[0].add_run(b),8.8,False,INK)
 
 page(doc); h(doc,'Checklist de uso 100%',1)
-bullets(doc,['Usuário autorizado e login validado.','Título claro e modo de processamento escolhido.','Áudio gravado/importado e participantes conferidos.','Foto registrada com consentimento, se desejada.','Transcrição revisada.','Análise semântica concluída.','Ata e demais documentos revisados/salvos.','Responsáveis, prazos, prioridades e status das ações ajustados.','Perguntas ao chat verificadas, quando necessário.','Pasta do Drive arquivada/atualizada sem duplicidade.','Card do Trello criado/atualizado e links conferidos.','Reunião excluída somente quando realmente necessário.'])
-callout(doc,'Fluxo ideal','Reunião → transcrição → revisão → análise → documentos → ações → Drive → Trello.')
+bullets(doc,['Usuário autorizado e login validado.','Título claro, origem do áudio e modo de processamento escolhidos.','No Google Meet: aba correta selecionada, áudio da guia compartilhado e microfone autorizado quando necessário.','Áudio gravado/importado e participantes conferidos.','Foto registrada com consentimento, se desejada.','Transcrição revisada.','Análise semântica concluída.','Ata e demais documentos revisados/salvos.','Responsáveis, prazos, prioridades e status das ações ajustados.','Perguntas ao chat verificadas, quando necessário.','Pasta do Drive arquivada/atualizada sem duplicidade e com PDFs.','Card do Trello criado/atualizado e links conferidos.','Reunião excluída somente quando realmente necessário.'])
+callout(doc,'Fluxo ideal','Google Meet/presencial → gravação → transcrição → revisão → análise → documentos → ações → Drive → Trello.')
 h(doc,'Perfis',2)
 t=doc.add_table(rows=1,cols=3); t.alignment=WD_TABLE_ALIGNMENT.CENTER; t.autofit=False
 for c,w in zip(t.rows[0].cells,[1.3,2.5,2.7]): c.width=Inches(w); shade(c,GREEN); set_cell_margins(c)
@@ -211,6 +230,6 @@ for row in [('Usuário','Criar/processar reuniões; editar documentos e ações;
     cells=t.add_row().cells
     for c,w in zip(cells,[1.3,2.5,2.7]): c.width=Inches(w); set_cell_margins(c)
     for c,txt in zip(cells,row): font(c.paragraphs[0].add_run(txt),8.8,c is cells[0],GREEN if c is cells[0] else INK)
-add_text(doc,'Manual preparado a partir da versão publicada do KeyNotesAI e de telas reais do sistema. A interface poderá receber ajustes sem alterar o fluxo essencial.',color=MUTED,size=8,after=0,align=WD_ALIGN_PARAGRAPH.CENTER)
+add_text(doc,'Manual versão 1.1, preparado a partir da versão publicada do KeyNotesAI e de telas reais do sistema. A interface poderá receber ajustes sem alterar o fluxo essencial.',color=MUTED,size=8,after=0,align=WD_ALIGN_PARAGRAPH.CENTER)
 
 OUT.parent.mkdir(parents=True,exist_ok=True); doc.save(OUT); print(OUT)
