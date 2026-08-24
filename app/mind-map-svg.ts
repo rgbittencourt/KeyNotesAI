@@ -14,30 +14,27 @@ const html = (value: unknown) =>
   xml(value).replace(/'/g, "&#039;");
 
 export function buildMindMapSvg(map: MindMapData) {
-  const branches = map.branches.slice(0, 8);
+  const branches = map.branches.slice(0, 6);
   const rootWidth = 430;
   const topicWidth = 360;
   const leafWidth = 520;
-  const nodeGap = 28;
-  const blockGap = 58;
-  const blockHeights = branches.map((branch) =>
-    Math.max(108, Math.max(1, branch.subtopics.slice(0, 6).length) * (76 + nodeGap) - nodeGap),
-  );
-  const height = Math.max(900, 150 + blockHeights.reduce((sum, value) => sum + value, 0) + blockGap * Math.max(0, branches.length - 1));
-  const width = 2260;
+  const blockGap = 10;
+  const height = 1400;
+  const width = 2400;
   const rootX = 280;
   const topicX = 930;
-  const leafX = 1730;
+  const leafX = 1810;
   const centerY = height / 2;
   const paths: string[] = [];
   const nodes: string[] = [];
   const toggles: string[] = [];
-  let cursorY = 75;
+  const availableHeight = height - 130 - blockGap * Math.max(0, branches.length - 1);
+  const blockHeight = availableHeight / Math.max(1, branches.length);
+  let cursorY = 65;
 
   branches.forEach((branch, branchIndex) => {
-    const blockHeight = blockHeights[branchIndex];
     const topicY = cursorY + blockHeight / 2;
-    const subtopics = branch.subtopics.slice(0, 6).length ? branch.subtopics.slice(0, 6) : [branch.summary];
+    const subtopics = branch.subtopics.slice(0, 4).length ? branch.subtopics.slice(0, 4) : [branch.summary];
     const rootStartX = rootX + rootWidth / 2;
     const topicEndX = topicX - topicWidth / 2;
     paths.push(curve(rootStartX, centerY, topicEndX, topicY, "#8f94ff", 7));
@@ -45,11 +42,11 @@ export function buildMindMapSvg(map: MindMapData) {
     toggles.push(toggle(topicX + topicWidth / 2 + 42, topicY));
 
     subtopics.forEach((subtopic, subIndex) => {
-      const leafY = subtopics.length === 1 ? topicY : cursorY + 38 + subIndex * (76 + nodeGap);
+      const leafY = subtopics.length === 1 ? topicY : cursorY + ((subIndex + 0.5) * blockHeight) / subtopics.length;
       const topicStartX = topicX + topicWidth / 2 + 62;
       const leafEndX = leafX - leafWidth / 2;
       paths.push(curve(topicStartX, topicY, leafEndX, leafY, "#a8c9ef", 5));
-      nodes.push(node(leafX, leafY, leafWidth, 76, "#30433f", subtopic, "", "subtopic"));
+      nodes.push(node(leafX, leafY, leafWidth, 62, "#30433f", subtopic, "", "subtopic"));
     });
     cursorY += blockHeight + blockGap;
   });
