@@ -14,45 +14,58 @@ const html = (value: unknown) =>
   xml(value).replace(/'/g, "&#039;");
 
 export function buildMindMapSvg(map: MindMapData) {
-  const width = 2200;
-  const height = 1400;
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const topicRadiusX = 600;
-  const topicRadiusY = 360;
-  const subtopicRadiusX = 950;
-  const subtopicRadiusY = 590;
-  const colors = ["#3f765e", "#b07a35", "#526f91", "#91627f", "#718e4f", "#ad6250", "#527f83", "#8a7048"];
   const branches = map.branches.slice(0, 8);
+  const rootWidth = 430;
+  const topicWidth = 360;
+  const leafWidth = 520;
+  const nodeGap = 28;
+  const blockGap = 58;
+  const blockHeights = branches.map((branch) =>
+    Math.max(108, Math.max(1, branch.subtopics.slice(0, 6).length) * (76 + nodeGap) - nodeGap),
+  );
+  const height = Math.max(900, 150 + blockHeights.reduce((sum, value) => sum + value, 0) + blockGap * Math.max(0, branches.length - 1));
+  const width = 2260;
+  const rootX = 280;
+  const topicX = 930;
+  const leafX = 1730;
+  const centerY = height / 2;
   const paths: string[] = [];
   const nodes: string[] = [];
+  const toggles: string[] = [];
+  let cursorY = 75;
 
   branches.forEach((branch, branchIndex) => {
-    const angle = -Math.PI / 2 + (Math.PI * 2 * branchIndex) / branches.length;
-    const topicX = centerX + Math.cos(angle) * topicRadiusX;
-    const topicY = centerY + Math.sin(angle) * topicRadiusY;
-    const color = colors[branchIndex % colors.length];
-    const controlX = centerX + Math.cos(angle) * topicRadiusX * 0.48;
-    const controlY = centerY + Math.sin(angle) * topicRadiusY * 0.48;
-    paths.push(`<path d="M ${centerX} ${centerY} Q ${controlX} ${controlY} ${topicX} ${topicY}" stroke="${color}" stroke-width="9" fill="none" stroke-linecap="round" opacity=".9"/>`);
-    nodes.push(node(topicX, topicY, 260, 104, color, branch.topic, branch.summary, "topic"));
+    const blockHeight = blockHeights[branchIndex];
+    const topicY = cursorY + blockHeight / 2;
+    const subtopics = branch.subtopics.slice(0, 6).length ? branch.subtopics.slice(0, 6) : [branch.summary];
+    const rootStartX = rootX + rootWidth / 2;
+    const topicEndX = topicX - topicWidth / 2;
+    paths.push(curve(rootStartX, centerY, topicEndX, topicY, "#8f94ff", 7));
+    nodes.push(node(topicX, topicY, topicWidth, 96, "#4d5660", branch.topic, "", "topic"));
+    toggles.push(toggle(topicX + topicWidth / 2 + 42, topicY));
 
-    const subtopics = branch.subtopics.slice(0, 6);
-    const spread = Math.min(0.72, 0.2 + subtopics.length * 0.09);
     subtopics.forEach((subtopic, subIndex) => {
-      const offset = subtopics.length === 1 ? 0 : -spread / 2 + (spread * subIndex) / (subtopics.length - 1);
-      const subAngle = angle + offset;
-      const subX = centerX + Math.cos(subAngle) * subtopicRadiusX;
-      const subY = centerY + Math.sin(subAngle) * subtopicRadiusY;
-      const subControlX = topicX + (subX - topicX) * 0.52;
-      const subControlY = topicY + (subY - topicY) * 0.52;
-      paths.push(`<path d="M ${topicX} ${topicY} Q ${subControlX} ${subControlY} ${subX} ${subY}" stroke="${color}" stroke-width="4" fill="none" stroke-linecap="round" opacity=".65"/>`);
-      nodes.push(node(subX, subY, 180, 62, color, subtopic, "", "subtopic"));
+      const leafY = subtopics.length === 1 ? topicY : cursorY + 38 + subIndex * (76 + nodeGap);
+      const topicStartX = topicX + topicWidth / 2 + 62;
+      const leafEndX = leafX - leafWidth / 2;
+      paths.push(curve(topicStartX, topicY, leafEndX, leafY, "#a8c9ef", 5));
+      nodes.push(node(leafX, leafY, leafWidth, 76, "#30433f", subtopic, "", "subtopic"));
     });
+    cursorY += blockHeight + blockGap;
   });
 
-  const central = node(centerX, centerY, 320, 142, "#203a2c", map.title, "Tema central", "center");
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xhtml="http://www.w3.org/1999/xhtml" viewBox="0 0 ${width} ${height}" role="img" aria-label="Mapa mental automático: ${xml(map.title)}"><rect width="100%" height="100%" rx="32" fill="#fbfaf6"/><g class="mind-links">${paths.join("")}</g><g class="mind-nodes">${nodes.join("")}${central}</g></svg>`;
+  const central = node(rootX, centerY, rootWidth, 112, "#5e6178", map.title, "", "center");
+  const rootToggle = toggle(rootX + rootWidth / 2 + 42, centerY);
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xhtml="http://www.w3.org/1999/xhtml" viewBox="0 0 ${width} ${height}" role="img" aria-label="Mapa mental automático: ${xml(map.title)}"><rect width="100%" height="100%" fill="#080909"/><g class="mind-links">${paths.join("")}</g><g class="mind-nodes">${nodes.join("")}${central}</g><g class="mind-toggles">${toggles.join("")}${rootToggle}</g></svg>`;
+}
+
+function curve(x1: number, y1: number, x2: number, y2: number, color: string, width: number) {
+  const bend = (x2 - x1) * 0.48;
+  return `<path d="M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}" stroke="${color}" stroke-width="${width}" fill="none" stroke-linecap="round"/>`;
+}
+
+function toggle(x: number, y: number) {
+  return `<circle cx="${x}" cy="${y}" r="24" fill="#505b66"/><text x="${x}" y="${y + 10}" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="32">‹</text>`;
 }
 
 function node(x: number, y: number, width: number, height: number, color: string, title: string, detail: string, kind: "center" | "topic" | "subtopic") {
@@ -61,7 +74,7 @@ function node(x: number, y: number, width: number, height: number, color: string
   return `<foreignObject x="${left}" y="${top}" width="${width}" height="${height}"><xhtml:div class="mind-node mind-node-${kind}" style="--node-color:${color}"><xhtml:strong>${html(title)}</xhtml:strong>${detail ? `<xhtml:span>${html(detail)}</xhtml:span>` : ""}</xhtml:div></foreignObject>`;
 }
 
-export const mindMapSvgStyles = `.mind-node{box-sizing:border-box;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 14px;border:3px solid var(--node-color);border-radius:18px;background:#fff;color:#26332c;text-align:center;font-family:Arial,sans-serif;box-shadow:0 7px 18px #24382c20}.mind-node strong{font-size:17px;line-height:1.15;color:var(--node-color)}.mind-node span{display:block;margin-top:5px;font-size:11px;line-height:1.25;color:#667069}.mind-node-center{border-width:5px;border-radius:50%;background:#eaf3ed}.mind-node-center strong{font:700 25px Georgia,serif}.mind-node-center span{font-size:12px;letter-spacing:1.5px;text-transform:uppercase}.mind-node-topic{background:#fff}.mind-node-subtopic{border-width:2px;border-radius:13px;background:#fdfdfb}.mind-node-subtopic strong{font-size:13px}`;
+export const mindMapSvgStyles = `.mind-node{box-sizing:border-box;width:100%;height:100%;display:flex;align-items:center;justify-content:flex-start;padding:18px 28px;border:0;border-radius:14px;background:var(--node-color);color:#fff;font-family:Georgia,serif;box-shadow:0 7px 20px #0006}.mind-node strong{font-size:29px;line-height:1.15;font-weight:400;color:#fff}.mind-node-center{justify-content:center;text-align:center}.mind-node-center strong{font-size:32px}.mind-node-topic strong{font-size:28px}.mind-node-subtopic strong{font-size:26px}`;
 
 export function buildStandaloneMindMapSvg(map: MindMapData) {
   return buildMindMapSvg(map).replace(">", `><style>${mindMapSvgStyles}</style>`);
