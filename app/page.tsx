@@ -45,6 +45,7 @@ export type DeviceRecording = {
   processedAt?: string;
   processingMode?: "semantic" | "local";
   transcriptionMode?: "hybrid" | "openai";
+  recordingSource?: "microphone" | "google-meet" | "google-meet-microphone";
   driveFolderUrl?: string;
   driveFolderId?: string;
   driveFiles?: Array<{ id: string; name: string; webViewLink: string }>;
@@ -665,6 +666,8 @@ export default function Home() {
   );
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const sourceStreamsRef = useRef<MediaStream[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
   const participantsRef = useRef<string[]>([]);
@@ -685,6 +688,9 @@ export default function Home() {
   const [meetingTitleNow, setMeetingTitleNow] = useState("");
   const [newMeetingTranscriptionMode, setNewMeetingTranscriptionMode] =
     useState<"hybrid" | "openai">("hybrid");
+  const [newMeetingRecordingSource, setNewMeetingRecordingSource] = useState<
+    "microphone" | "google-meet" | "google-meet-microphone"
+  >("google-meet-microphone");
   const [liveParticipants, setLiveParticipants] = useState<string[]>([]);
   const [listeningParticipant, setListeningParticipant] = useState(false);
   const [driveIntegration, setDriveIntegration] =
@@ -784,10 +790,62 @@ export default function Home() {
     );
     return () => window.clearInterval(timer);
   }, [recording]);
+  async function releaseRecordingSources() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    sourceStreamsRef.current.forEach((stream) =>
+      stream.getTracks().forEach((track) => track.stop()),
+    );
+    sourceStreamsRef.current = [];
+    streamRef.current = null;
+    const context = audioContextRef.current;
+    audioContextRef.current = null;
+    if (context && context.state !== "closed") await context.close().catch(() => {});
+  }
+  async function captureRecordingStream(
+    source: "microphone" | "google-meet" | "google-meet-microphone",
+  ) {
+    if (source === "microphone") {
+      const microphone = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      sourceStreamsRef.current = [microphone];
+      return microphone;
+    }
+    if (!navigator.mediaDevices.getDisplayMedia)
+      throw new DOMException(
+        "A captura da aba não está disponível neste navegador.",
+        "NotSupportedError",
+      );
+    const display = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: true,
+    });
+    sourceStreamsRef.current = [display];
+    if (!display.getAudioTracks().length) {
+      display.getTracks().forEach((track) => track.stop());
+      sourceStreamsRef.current = [];
+      throw new DOMException(
+        "Selecione a aba do Google Meet e marque Compartilhar áudio da guia.",
+        "NotFoundError",
+      );
+    }
+    if (source === "google-meet")
+      return new MediaStream(display.getAudioTracks());
+    const microphone = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    sourceStreamsRef.current.push(microphone);
+    const context = new AudioContext();
+    audioContextRef.current = context;
+    const destination = context.createMediaStreamDestination();
+    context.createMediaStreamSource(display).connect(destination);
+    context.createMediaStreamSource(microphone).connect(destination);
+    return destination.stream;
+  }
   async function toggleRecording() {
     if (recording) {
       recorderRef.current?.stop();
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      await releaseRecordingSources();
       setRecording(false);
       return;
     }
@@ -803,7 +861,8 @@ export default function Home() {
     }
     setRequestingMic(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recordingSource = newMeetingRecordingSource;
+      const stream = await captureRecordingStream(recordingSource);
       const recorder = new MediaRecorder(stream);
       const title =
           meetingTitleNow.trim() ||
@@ -840,6 +899,7 @@ export default function Home() {
           duration: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
           size: `${(blob.size / 1024 / 1024).toFixed(1)} MB`,
           transcriptionMode,
+          recordingSource,
         };
         await persistRecording({ ...base, blob });
         setDeviceRecordings((r) => [
@@ -853,14 +913,35 @@ export default function Home() {
       recorder.start(1000);
       recorderRef.current = recorder;
       streamRef.current = stream;
+      const displayVideoTrack = sourceStreamsRef.current
+        .flatMap((sourceStream) => sourceStream.getVideoTracks())[0];
+      if (displayVideoTrack)
+        displayVideoTrack.onended = () => {
+          if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+          void releaseRecordingSources();
+          setRecording(false);
+          notify("Compartilhamento do Google Meet encerrado; gravação salva");
+        };
       setRecording(true);
       setActive("Reuniões");
-      notify("Gravação iniciada pelo microfone");
+      notify(
+        recordingSource === "microphone"
+          ? "Gravação iniciada pelo microfone"
+          : recordingSource === "google-meet"
+            ? "Áudio da aba do Google Meet sendo gravado"
+            : "Google Meet e microfone sendo gravados juntos",
+      );
     } catch (error) {
-      const reason =
-        error instanceof DOMException && error.name === "NotAllowedError"
-          ? "O navegador recusou o microfone. Confira a permissão e se outro aplicativo está usando o dispositivo."
-          : "Não foi possível iniciar o microfone neste navegador.";
+      await releaseRecordingSources();
+      const reason = error instanceof DOMException
+        ? error.name === "NotAllowedError"
+          ? "A captura foi cancelada ou recusada. Autorize a aba do Google Meet e o microfone quando solicitado."
+          : error.name === "NotFoundError"
+            ? error.message
+            : error.name === "NotSupportedError"
+              ? "Abra o KeyNotesAI no Chrome ou Edge para capturar o áudio do Google Meet."
+              : "Não foi possível iniciar a captura de áudio."
+        : "Não foi possível iniciar a captura de áudio.";
       setRecordingIssue(reason);
     } finally {
       setRequestingMic(false);
@@ -1288,7 +1369,7 @@ export default function Home() {
                   >
                     <i />
                     {requestingMic
-                      ? "Solicitando microfone..."
+                      ? "Aguardando autorização..."
                       : recording
                         ? "Encerrar e salvar"
                         : "Gravar nova reunião"}
@@ -1356,6 +1437,35 @@ export default function Home() {
                       aria-label="Nome da reunião"
                     />
                     <label className="meeting-mode-select">
+                      <span>Origem do áudio</span>
+                      <select
+                        value={newMeetingRecordingSource}
+                        onChange={(e) =>
+                          setNewMeetingRecordingSource(
+                            e.target.value as
+                              | "microphone"
+                              | "google-meet"
+                              | "google-meet-microphone",
+                          )
+                        }
+                      >
+                        <option value="google-meet-microphone">
+                          Google Meet + microfone (recomendado)
+                        </option>
+                        <option value="google-meet">
+                          Google Meet · somente áudio da aba
+                        </option>
+                        <option value="microphone">
+                          Presencial · somente microfone
+                        </option>
+                      </select>
+                      {newMeetingRecordingSource !== "microphone" && (
+                        <small>
+                          Ao iniciar, selecione a aba do Meet e marque “Compartilhar áudio da guia”.
+                        </small>
+                      )}
+                    </label>
+                    <label className="meeting-mode-select">
                       <span>Processamento da reunião</span>
                       <select
                         value={newMeetingTranscriptionMode}
@@ -1376,8 +1486,10 @@ export default function Home() {
                     <button onClick={toggleRecording} disabled={requestingMic}>
                       <i />
                       {requestingMic
-                        ? "Solicitando microfone..."
-                        : "Iniciar reunião e gravar"}
+                        ? "Aguardando autorização..."
+                        : newMeetingRecordingSource === "microphone"
+                          ? "Iniciar reunião presencial"
+                          : "Gravar reunião do Google Meet"}
                     </button>
                   </div>
                 </div>
