@@ -8,7 +8,6 @@ import {
 } from "./chunked-transcription";
 import { transcribeAudioWithOpenAI } from "./openai-transcription";
 import { openProfessionalDocument } from "./professional-documents";
-import { answerMeetingQuestion } from "./smart-meeting-query";
 import type { DeviceRecording } from "./page";
 
 type Props = {
@@ -49,6 +48,7 @@ export default function RealFeatureView(p: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null),
     [draft, setDraft] = useState(""),
     [question, setQuestion] = useState(""),
+    [asking, setAsking] = useState(false),
     [transcribing, setTranscribing] = useState(false),
     [analyzing, setAnalyzing] = useState(false),
     [archivingDrive, setArchivingDrive] = useState(false),
@@ -389,40 +389,75 @@ export default function RealFeatureView(p: Props) {
       p.notify("Digite uma pergunta sobre a reunião");
       return;
     }
+    if (asking) return;
     const history = target.chatHistory || [];
-    const previousQuestion = [...history]
-      .reverse()
-      .find((message) => message.role === "user")?.text;
     const now = new Date().toISOString();
-    const response = answerMeetingQuestion(
-      target,
-      cleanQuestion,
-      previousQuestion || "",
-    );
-    await p.updateRecording(target.id, {
-      chatHistory: [
-        ...history,
-        {
-          id: crypto.randomUUID(),
-          role: "user",
-          text: cleanQuestion,
-          createdAt: now,
-        },
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          text: response,
-          createdAt: now,
-        },
-      ],
-    });
+    const userMessage = {
+      id: crypto.randomUUID(),
+      role: "user" as const,
+      text: cleanQuestion,
+      createdAt: now,
+    };
+    setAsking(true);
     setQuestion("");
-    window.setTimeout(() =>
-      chatLogRef.current?.scrollTo({
-        top: chatLogRef.current.scrollHeight,
-        behavior: "smooth",
-      }),
-    );
+    try {
+      await p.updateRecording(target.id, {
+        chatHistory: [...history, userMessage],
+      });
+      const response = await fetch("/api/ask-meeting", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          question: cleanQuestion,
+          history: history.map(({ role, text }) => ({ role, text })),
+          meeting: {
+            name: target.name,
+            meetingDate: target.meetingDate || target.createdAt,
+            meetingTime: target.meetingTime,
+            duration: target.duration,
+            participants: target.participants,
+            department: target.department,
+            agenda: target.agenda,
+            transcript: target.transcript,
+            summary: target.summary,
+            themes: target.themes,
+            actions: target.actions,
+            decisions: target.decisions,
+          },
+        }),
+      });
+      const result = (await response.json().catch(() => null)) as
+        | { answer?: string; error?: string }
+        | null;
+      if (!response.ok || !result?.answer)
+        throw new Error(result?.error || "Não foi possível obter a resposta.");
+      await p.updateRecording(target.id, {
+        chatHistory: [
+          ...history,
+          userMessage,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            text: result.answer,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      });
+    } catch (error) {
+      p.notify(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível consultar a reunião.",
+      );
+    } finally {
+      setAsking(false);
+      window.setTimeout(() =>
+        chatLogRef.current?.scrollTo({
+          top: chatLogRef.current.scrollHeight,
+          behavior: "smooth",
+        }),
+      );
+    }
   }
   async function updateActionFields(
     recordingId: number,
@@ -990,6 +1025,7 @@ export default function RealFeatureView(p: Props) {
           <div className="ask-box">
             <input
               value={question}
+              disabled={asking}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -997,9 +1033,21 @@ export default function RealFeatureView(p: Props) {
                   void ask();
                 }
               }}
-              placeholder="Ex.: Quem estava presente?"
+              placeholder={
+                asking
+                  ? "Analisando a reunião…"
+                  : "Ex.: Qual aplicativo foi mencionado?"
+              }
             />
-            <button onClick={() => void ask()}>↑</button>
+            <button
+              disabled={asking}
+              onClick={() => void ask()}
+              aria-label={
+                asking ? "Analisando a reunião" : "Enviar pergunta"
+              }
+            >
+              {asking ? "…" : "↑"}
+            </button>
           </div>
         </article>
       </div>
