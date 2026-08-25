@@ -1149,7 +1149,17 @@ export default function Home() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <img src="/keynotesai-logo.png" alt="" />
+          <button
+            className="brand-signout"
+            type="button"
+            aria-label="Sair do KeyNotesAI e voltar à capa"
+            title="Sair e voltar à capa"
+            onClick={() =>
+              (location.href = "/signout-with-chatgpt?return_to=%2F")
+            }
+          >
+            <img src="/keynotesai-logo.png" alt="" />
+          </button>
           <div>
             <strong>
               KeyNotes<span>AI</span>
@@ -1244,8 +1254,11 @@ export default function Home() {
         <header>
           <button
             className="mobile-brand"
-            aria-label="Abrir menu"
-            onClick={() => notify("Acesse os módulos pela navegação")}
+            aria-label="Sair do KeyNotesAI e voltar à capa"
+            title="Sair e voltar à capa"
+            onClick={() =>
+              (location.href = "/signout-with-chatgpt?return_to=%2F")
+            }
           >
             <img src="/keynotesai-logo.png" alt="" />
           </button>

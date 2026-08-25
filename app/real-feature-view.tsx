@@ -459,6 +459,21 @@ export default function RealFeatureView(p: Props) {
       );
     }
   }
+  async function clearMeetingChat() {
+    if (!qaMeeting?.chatHistory?.length) {
+      p.notify("Esta reunião ainda não possui conversa para apagar");
+      return;
+    }
+    if (
+      !confirm(
+        `Apagar todas as perguntas e respostas da reunião “${qaMeeting.name}”?`,
+      )
+    )
+      return;
+    await p.updateRecording(qaMeeting.id, { chatHistory: [] });
+    setQuestion("");
+    p.notify("Conversa da reunião apagada");
+  }
   async function updateActionFields(
     recordingId: number,
     actionId: string,
@@ -983,6 +998,15 @@ export default function RealFeatureView(p: Props) {
             dados reais da reunião.
           </p>
         </div>
+        {qaMeeting?.chatHistory?.length ? (
+          <button
+            className="ghost-btn danger-btn"
+            disabled={asking}
+            onClick={() => void clearMeetingChat()}
+          >
+            Apagar conversa
+          </button>
+        ) : null}
       </div>
       <div className="qa-grid">
         <aside className="card meeting-picker">
