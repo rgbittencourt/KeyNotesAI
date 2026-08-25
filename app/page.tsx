@@ -44,7 +44,14 @@ export type DeviceRecording = {
   >;
   processedAt?: string;
   processingMode?: "semantic" | "local";
-  transcriptionMode?: "hybrid" | "openai";
+  transcriptionMode?: "hybrid" | "openai" | "diarized";
+  speakerSegments?: Array<{
+    speaker: string;
+    start: number;
+    end: number;
+    text: string;
+  }>;
+  speakerNames?: Record<string, string>;
   recordingSource?: "microphone" | "google-meet" | "google-meet-microphone";
   driveFolderUrl?: string;
   driveFolderId?: string;
@@ -687,7 +694,7 @@ export default function Home() {
   const [meetingTime, setMeetingTime] = useState("");
   const [meetingTitleNow, setMeetingTitleNow] = useState("");
   const [newMeetingTranscriptionMode, setNewMeetingTranscriptionMode] =
-    useState<"hybrid" | "openai">("hybrid");
+    useState<"hybrid" | "openai" | "diarized">("hybrid");
   const [newMeetingRecordingSource, setNewMeetingRecordingSource] = useState<
     "microphone" | "google-meet" | "google-meet-microphone"
   >("google-meet-microphone");
@@ -863,7 +870,7 @@ export default function Home() {
     try {
       const recordingSource = newMeetingRecordingSource;
       const stream = await captureRecordingStream(recordingSource);
-      const recorder = new MediaRecorder(stream);
+      const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 32000 });
       const title =
           meetingTitleNow.trim() ||
           `Reunião · ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
@@ -1491,7 +1498,10 @@ export default function Home() {
                         value={newMeetingTranscriptionMode}
                         onChange={(e) =>
                           setNewMeetingTranscriptionMode(
-                            e.target.value as "hybrid" | "openai",
+                            e.target.value as
+                              | "hybrid"
+                              | "openai"
+                              | "diarized",
                           )
                         }
                       >
@@ -1500,6 +1510,9 @@ export default function Home() {
                         </option>
                         <option value="openai">
                           Totalmente OpenAI · áudio e documentos
+                        </option>
+                        <option value="diarized">
+                          OpenAI + identificação de locutores
                         </option>
                       </select>
                     </label>

@@ -6,7 +6,10 @@ import {
   transcribeAudioInChunks,
   type TranscriptionQuality,
 } from "./chunked-transcription";
-import { transcribeAudioWithOpenAI } from "./openai-transcription";
+import {
+  transcribeAudioWithOpenAI,
+  type SpeakerSegment,
+} from "./openai-transcription";
 import { openProfessionalDocument } from "./professional-documents";
 import type { DeviceRecording } from "./page";
 
@@ -39,6 +42,11 @@ const download = (name: string, content: string) => {
   a.click();
   URL.revokeObjectURL(u);
 };
+const speakerLabel=(speaker:string,names:Record<string,string>)=>names[speaker]?.trim()||(/^[a-z0-9]+$/i.test(speaker)?`Locutor ${speaker}`:speaker.replace(/^speaker[_ -]?/i,"Locutor "));
+const speakerTranscript=(segments:SpeakerSegment[],names:Record<string,string>)=>segments.map(segment=>{
+  const minutes=Math.floor(segment.start/60),seconds=Math.floor(segment.start%60);
+  return`[${String(minutes).padStart(2,"0")}:${String(seconds).padStart(2,"0")}] ${speakerLabel(segment.speaker,names)}: ${segment.text}`;
+}).join("\n\n");
 
 export default function RealFeatureView(p: Props) {
   const filePhotoRef = useRef<HTMLInputElement | null>(null);
@@ -199,11 +207,15 @@ export default function RealFeatureView(p: Props) {
       const blob = await fetch(selected.url).then((r) => r.blob());
       setTranscriptionProgress(45);
       setTranscriptionStatus("A OpenAI está transcrevendo a reunião…");
-      const text = await transcribeAudioWithOpenAI(blob);
+      const diarize=selected.transcriptionMode==="diarized";
+      const result = await transcribeAudioWithOpenAI(blob,{diarize,participants:selected.participants});
+      const text=diarize&&result.segments.length?speakerTranscript(result.segments,result.speakerNames):result.text;
       setDraft(text);
       await p.updateRecording(selected.id, {
         transcript: text,
-        transcriptionMode: "openai",
+        transcriptionMode: diarize?"diarized":"openai",
+        speakerSegments: result.segments,
+        speakerNames: result.speakerNames,
       });
       setTranscriptionProgress(100);
       setTranscriptionStatus("Transcrição concluída pela OpenAI");
@@ -218,6 +230,13 @@ export default function RealFeatureView(p: Props) {
     } finally {
       setTranscribing(false);
     }
+  }
+  async function renameSpeaker(speaker:string,name:string){
+    if(!selected?.speakerSegments)return;
+    const speakerNames={...(selected.speakerNames||{}),[speaker]:name};
+    const transcript=speakerTranscript(selected.speakerSegments,speakerNames);
+    setDraft(transcript);
+    await p.updateRecording(selected.id,{speakerNames,transcript});
   }
   async function archiveInDrive() {
     if (!selected || archivingDrive) return;
@@ -754,13 +773,17 @@ export default function RealFeatureView(p: Props) {
                       <input type="radio" name="transcription-mode" checked={selected.transcriptionMode==="openai"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"openai"})}/>
                       <span><b>Totalmente OpenAI</b><small>Áudio e documentos pela API · ~R$ 2,00/h</small></span>
                     </label>
+                    <label className={selected.transcriptionMode==="diarized"?"selected":""}>
+                      <input type="radio" name="transcription-mode" checked={selected.transcriptionMode==="diarized"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"diarized"})}/>
+                      <span><b>OpenAI + locutores</b><small>Separa as vozes e relaciona nomes pela chamada inicial</small></span>
+                    </label>
                   </div>
                   <div className="transcription-controls">
                     {(selected.transcriptionMode||"hybrid")==="hybrid"&&<select value={transcriptionQuality} onChange={(e)=>setTranscriptionQuality(e.target.value as TranscriptionQuality)} disabled={transcribing} aria-label="Qualidade da transcrição">
                       <option value="accurate">Mais preciso</option><option value="balanced">Equilibrado</option><option value="fast">Mais rápido</option>
                     </select>}
                     <button onClick={(selected.transcriptionMode||"hybrid")==="hybrid"?transcribeLocally:transcribeWithOpenAI} disabled={transcribing}>
-                      {transcribing?"Transcrevendo…":(selected.transcriptionMode||"hybrid")==="hybrid"?"Transcrever no aparelho":"Transcrever pela OpenAI"}
+                      {transcribing?"Transcrevendo…":(selected.transcriptionMode||"hybrid")==="hybrid"?"Transcrever no aparelho":selected.transcriptionMode==="diarized"?"Transcrever e identificar locutores":"Transcrever pela OpenAI"}
                     </button>
                   </div>
                   {transcriptionStatus && (
@@ -776,6 +799,30 @@ export default function RealFeatureView(p: Props) {
                     </div>
                   )}
                 </div>
+                {selected.speakerSegments?.length ? (
+                  <section className="speaker-review">
+                    <div>
+                      <strong>Conferir identificação dos locutores</strong>
+                      <small>Revise os nomes antes de gerar os documentos. A chamada inicial é usada para a associação automática.</small>
+                    </div>
+                    <div className="speaker-review-grid">
+                      {[...new Set(selected.speakerSegments.map(item=>item.speaker))].map((speaker,index)=>(
+                        <label key={speaker}>
+                          <span>{speakerLabel(speaker,{})}</span>
+                          <input
+                            list={`participants-${selected.id}`}
+                            value={selected.speakerNames?.[speaker]||""}
+                            placeholder={`Nome do locutor ${index+1}`}
+                            onChange={event=>void renameSpeaker(speaker,event.currentTarget.value)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <datalist id={`participants-${selected.id}`}>
+                      {(selected.participants||"").split(/[\n,;]+/).map(name=>name.trim()).filter(Boolean).map(name=><option value={name} key={name}/>) }
+                    </datalist>
+                  </section>
+                ):null}
                 <label className="transcript-editor">
                   <strong>Transcrição da reunião</strong>
                   <small>

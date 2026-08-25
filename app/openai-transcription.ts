@@ -1,8 +1,12 @@
-export async function transcribeAudioWithOpenAI(blob:Blob){
+export type SpeakerSegment={speaker:string;start:number;end:number;text:string};
+export type OpenAITranscription={text:string;segments:SpeakerSegment[];speakerNames:Record<string,string>};
+export async function transcribeAudioWithOpenAI(blob:Blob,options?:{diarize?:boolean;participants?:string}){
  const data=new FormData();
  data.set("audio",blob,"reuniao.webm");
+ data.set("diarize",options?.diarize?"true":"false");
+ if(options?.participants)data.set("participants",options.participants);
  const response=await fetch("/api/transcribe-meeting",{method:"POST",body:data});
- const body=await response.json().catch(()=>({error:"O serviço retornou uma resposta inválida."}))as{text?:string;error?:string};
+ const body=await response.json().catch(()=>({error:"O serviço retornou uma resposta inválida."})) as OpenAITranscription&{error?:string};
  if(!response.ok||!body.text)throw new Error(body.error||"Não foi possível transcrever pela OpenAI.");
- return body.text;
+ return{ text:body.text,segments:body.segments||[],speakerNames:body.speakerNames||{} };
 }
