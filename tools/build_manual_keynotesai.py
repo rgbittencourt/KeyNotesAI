@@ -89,14 +89,14 @@ p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER; p.paragraph_format
 p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER; p.paragraph_format.space_after=Pt(8); font(p.add_run('Manual completo do usuário'),25,True,INK,'Aptos Display')
 p=doc.add_paragraph(); p.alignment=WD_ALIGN_PARAGRAPH.CENTER; font(p.add_run('Do acesso à reunião, documentos, Google Drive e Trello'),12,False,GREEN)
 for _ in range(5): doc.add_paragraph()
-callout(doc,'Versão 1.1','Guia prático para usuários autorizados e administradores. Atualizado em 24/08/2026, com suporte ao Google Meet.')
+callout(doc,'Versão 1.2','Guia prático para usuários autorizados e administradores. Atualizado em 24/08/2026, com identificação de locutores e conversa semântica.')
 add_text(doc,'Acesse: keynotes-ai.rogerio-bittencourt.chatgpt.site',bold=True,color=GREEN,size=10,align=WD_ALIGN_PARAGRAPH.CENTER)
 
 page(doc); h(doc,'Comece por aqui',1)
 add_text(doc,'O KeyNotesAI transforma uma reunião em registro pesquisável: gravação, transcrição, resumo, ata, decisões, ações e arquivos organizados. O fluxo recomendado abaixo cobre o uso completo.',size=10.5)
 for n,title,body in [
  (1,'Entrar','Acesse com a conta ChatGPT cujo e-mail foi previamente autorizado.'),
- (2,'Criar a reunião','Informe um título e escolha o processamento híbrido (padrão) ou totalmente OpenAI.'),
+ (2,'Criar a reunião','Informe um título e escolha o processamento híbrido (padrão), totalmente OpenAI ou OpenAI + locutores.'),
  (3,'Escolher a origem e gravar','Use Google Meet + microfone para reuniões on-line, somente microfone para encontros presenciais, ou importe um áudio existente.'),
  (4,'Completar o registro','Revise dados, participantes e, se desejar, adicione uma foto separada da ata.'),
  (5,'Transcrever e analisar','Revise a transcrição e gere resumo, ações, decisões e documentos.'),
@@ -114,7 +114,7 @@ picture(doc,'02-visao-geral.png','Visão geral e menu lateral com as integraçõ
 page(doc); h(doc,'2. Criar, gravar ou importar uma reunião',1)
 h(doc,'Nova gravação',2); bullets(doc,['Na Visão geral, informe um título claro — ele identificará histórico, documentos, pasta e card.','Escolha a origem do áudio: Google Meet + microfone (recomendado), somente Google Meet ou somente microfone.','Escolha o modo de processamento. O padrão é Híbrido.','Clique no botão para iniciar a gravação.','Autorize a captura solicitada pelo navegador.','Durante a reunião, acompanhe o tempo e registre participantes quando necessário.','Ao terminar, encerre a gravação e aguarde o arquivo ser preparado.'],numbered=True)
 h(doc,'Importar áudio',2); bullets(doc,['Clique em “Importar áudio”.','Selecione o arquivo salvo no computador.','Informe ou confirme o título e o modo de processamento.','Prossiga para a biblioteca em Arquivos.'])
-callout(doc,'Qual modo escolher?','Híbrido: padrão e menor custo; a transcrição é local e a OpenAI cuida da análise/documentos. Totalmente OpenAI: envia também o áudio para transcrição; costuma ser mais rápido e robusto, com custo adicional por minuto.')
+callout(doc,'Qual modo escolher?','Híbrido: padrão e menor custo. Totalmente OpenAI: envia também o áudio para transcrição. OpenAI + locutores: separa as vozes, tenta associá-las aos nomes da chamada inicial e permite revisão manual antes dos documentos.')
 picture(doc,'03-reunioes.png','A área Reuniões exibe somente a reunião real em andamento.')
 
 page(doc); h(doc,'Google Meet: captura completa',1)
@@ -132,7 +132,10 @@ callout(doc,'Uso de fones','Recomendado no modo Google Meet + microfone: evita q
 h(doc,'Outros modos',2); bullets(doc,['Google Meet — somente áudio da aba: grava os participantes remotos, mas pode não registrar bem sua voz local.','Presencial — somente microfone: indicado para pessoas reunidas fisicamente no mesmo ambiente.'])
 callout(doc,'Consentimento','Avise os participantes antes de iniciar e obtenha consentimento para gravação e processamento. O navegador sempre exige uma seleção manual da aba por segurança.')
 
-page(doc); h(doc,'3. Dados, participantes e foto',1)
+h(doc,'Chamada inicial para identificar vozes',2)
+bullets(doc,['Antes da discussão, peça que cada pessoa diga claramente: “Meu nome é [nome completo] e estou presente”.','Faça a chamada também no Google Meet; o nome exibido na tela não vem tecnicamente ligado ao áudio capturado.','Evite apresentações simultâneas e aguarde uma pessoa terminar antes da próxima.','Depois da transcrição, confira a associação entre Locutor A/B e os nomes registrados.'])
+
+h(doc,'3. Dados, participantes e foto',1)
 h(doc,'Completar os dados',2); bullets(doc,['Confirme título, data e hora.','Preencha setor/local, pauta e participantes, quando esses campos estiverem disponíveis.','Use nomes completos sempre que possível: isso melhora ata, ações e respostas do chat.'])
 h(doc,'Foto da reunião',2); bullets(doc,['Use “Tirar foto” para abrir a câmera em dispositivos/navegadores compatíveis.','Use “Selecionar arquivo” para escolher uma imagem existente.','Confira a miniatura antes de salvar/arquivar.','A foto é armazenada como anexo separado no Drive e, posteriormente, referenciada no Trello. Ela não entra na ata.'])
 picture(doc,'11-foto-reuniao.png','Registro fotográfico separado dos documentos oficiais.')
@@ -141,8 +144,9 @@ callout(doc,'Privacidade','Registre a imagem somente com o conhecimento e consen
 page(doc); h(doc,'4. Transcrição e análise semântica',1)
 h(doc,'Processar a reunião',2); bullets(doc,['Abra Arquivos e selecione a reunião.','Ouça o áudio se precisar confirmar a qualidade.','Inicie a transcrição. No modo híbrido, mantenha a aba aberta durante a etapa local.','Revise o texto: corrija nomes, siglas, números, datas e termos técnicos.','Salve a transcrição revisada.','Execute a análise semântica para gerar os resultados estruturados.'],numbered=True)
 picture(doc,'04-arquivos.png','Biblioteca: selecione uma gravação para transcrever, analisar e gerar documentos.')
+h(doc,'Identificação de locutores',2); bullets(doc,['Selecione “OpenAI + locutores” antes de transcrever.','O sistema separa as falas e adiciona horário e identificação provisória de locutor.','A chamada inicial e a lista de presença são usadas para sugerir os nomes.','Na área “Conferir identificação dos locutores”, corrija ou complete cada nome.','Somente depois da conferência, execute a análise e gere os documentos.'])
+callout(doc,'Funciona em qualquer origem','Google Meet, reunião presencial e áudio importado são aceitos. A precisão depende da clareza do áudio, da distância do microfone e de não haver falas simultâneas. Quando não houver evidência suficiente, o sistema mantém Locutor A/B em vez de inventar um nome.')
 h(doc,'O que a análise produz',2); bullets(doc,['Resumo e temas principais.','Participantes identificados.','Ações propostas, com responsável/prazo/prioridade quando mencionados.','Decisões, pendências e bloqueios.','Ata, resumo executivo, matriz de ações e registro de decisões.'])
-callout(doc,'Qualidade','A análise depende da transcrição. Antes de gerar documentos, corrija especialmente nomes próprios, datas, valores e compromissos.')
 
 page(doc); h(doc,'5. Documentos e histórico',1)
 h(doc,'Revisar e editar',2); bullets(doc,['Em Arquivos, selecione a reunião processada.','Abra cada documento gerado.','Edite o conteúdo necessário e salve.','Baixe uma cópia local quando precisar compartilhar fora do sistema.','Se editar após já ter arquivado, use “Atualizar no Drive” para substituir a versão anterior na mesma pasta.'])
@@ -157,17 +161,18 @@ for a,b in [('Ata','Registro formal do encontro, sem a foto.'),('Resumo executiv
 add_text(doc,'A busca superior localiza reuniões, decisões e tarefas. O histórico fica associado à conta e aos dados disponíveis no sistema.',size=9.5)
 
 page(doc); h(doc,'6. Ações e decisões',1)
-h(doc,'Ações',2); add_text(doc,'A descrição da ação vem da reunião. Depois do processamento, você pode ajustar os campos operacionais sem alterar o compromisso registrado.')
+h(doc,'Ações',2); add_text(doc,'A descrição da ação vem da reunião. Depois do processamento, você pode ajustar os campos operacionais sem alterar o compromisso registrado. Confirme na transcrição se “posso fazer” virou uma responsabilidade efetivamente acordada antes de tratar uma candidatura como compromisso.')
 bullets(doc,['Marque a caixa quando a ação estiver concluída.','Clique/edite o responsável.','Defina ou altere o prazo.','Classifique a prioridade.','Depois das alterações, atualize Drive/Trello para refletir a versão vigente.'])
 picture(doc,'14-acoes-com-dados.png','Ações reais extraídas de reuniões. Responsável, prazo e prioridade são editáveis.')
 h(doc,'Decisões',2); bullets(doc,['Use Decisões para acompanhar deliberações, pendências e bloqueios.','Confirme se o registro corresponde ao que foi efetivamente acordado.','Consulte a reunião de origem antes de compartilhar uma decisão sensível.'])
 picture(doc,'06-decisoes.png','Registro consolidado de decisões, pendências e bloqueios.')
 
 page(doc); h(doc,'7. Pergunte à IA',1)
-bullets(doc,['Abra “Pergunte à IA”.','Selecione a reunião.','Escreva uma pergunta objetiva e envie.','Leia a resposta, que usa os dados reais da reunião selecionada.','Continue perguntando: o histórico mostra cada pergunta e a respectiva resposta.'],numbered=True)
+bullets(doc,['Abra “Pergunte à IA”.','Selecione a reunião.','Escreva uma pergunta objetiva e envie.','Leia a resposta semântica, construída com transcrição, resumo, temas, ações e decisões.','Continue perguntando: o histórico mostra cada pergunta e a respectiva resposta.','Para recomeçar, clique em “Apagar conversa” e confirme; somente o histórico da reunião selecionada será removido.'],numbered=True)
 h(doc,'Boas perguntas',2); bullets(doc,['Quem participou e quais responsabilidades foram atribuídas?','Quais decisões foram tomadas?','O que deve ser entregue nesta semana?','Quais bloqueios permanecem sem solução?','Resuma a discussão sobre determinado tema.'])
 picture(doc,'12-chat-com-dados.png','Chat da reunião: selecione a reunião, pergunte e acompanhe todo o histórico de perguntas e respostas.')
 callout(doc,'Escopo','As respostas ficam limitadas ao conteúdo registrado naquela reunião. Confirme informações críticas na transcrição e nos documentos.')
+h(doc,'Sair do sistema',2); add_text(doc,'Clique no ícone do KeyNotesAI no topo do menu esquerdo. A sessão será encerrada pela autenticação oficial e o aplicativo retornará à capa. No celular, use o mesmo ícone no cabeçalho.')
 
 page(doc); h(doc,'8. Google Drive',1)
 h(doc,'Arquivar ou atualizar',2); bullets(doc,['Conclua a transcrição, a análise e a revisão dos documentos.','Clique em “Arquivar no Drive” na primeira vez.','Nas próximas alterações, clique em “Atualizar no Drive”.','O sistema reutiliza a mesma pasta da reunião e atualiza os arquivos; não deve criar pastas duplicadas.','Após sucesso no Drive, a sincronização do Trello é iniciada automaticamente.'],numbered=True)
@@ -209,6 +214,8 @@ problems=[
 ('Gravação encerrou sozinha','Interromper o compartilhamento da aba encerra e salva a gravação automaticamente.'),
 ('“Tirar foto” abre arquivos','Use navegador/dispositivo com câmera disponível e permissão concedida; em desktop sem câmera compatível, use Selecionar arquivo.'),
 ('Transcrição fraca','Revise áudio, ruído e distância do microfone; corrija a transcrição antes da análise.'),
+('Locutor sem nome','Confirme que a pessoa falou o nome na chamada inicial; depois associe manualmente o Locutor A/B na área de conferência.'),
+('Vozes trocadas','Corrija a associação na revisão de locutores antes de analisar e gerar documentos.'),
 ('Sem ações/decisões','Confirme que a reunião foi transcrita e analisada; compromissos precisam estar claros no texto.'),
 ('Drive não atualiza','Verifique o status em Integrações; tente novamente e confirme a pasta existente.'),
 ('Trello não atualiza','Primeiro atualize o Drive; depois use o botão manual e confirme quadro/lista conectados.'),
@@ -220,7 +227,7 @@ for a,b in problems:
     font(cells[0].paragraphs[0].add_run(a),8.8,True,GREEN); font(cells[1].paragraphs[0].add_run(b),8.8,False,INK)
 
 page(doc); h(doc,'Checklist de uso 100%',1)
-bullets(doc,['Usuário autorizado e login validado.','Título claro, origem do áudio e modo de processamento escolhidos.','No Google Meet: aba correta selecionada, áudio da guia compartilhado e microfone autorizado quando necessário.','Áudio gravado/importado e participantes conferidos.','Foto registrada com consentimento, se desejada.','Transcrição revisada.','Análise semântica concluída.','Ata e demais documentos revisados/salvos.','Responsáveis, prazos, prioridades e status das ações ajustados.','Perguntas ao chat verificadas, quando necessário.','Pasta do Drive arquivada/atualizada sem duplicidade e com PDFs.','Card do Trello criado/atualizado e links conferidos.','Reunião excluída somente quando realmente necessário.'])
+bullets(doc,['Usuário autorizado e login validado.','Título claro, origem do áudio e modo de processamento escolhidos.','No Google Meet: aba correta selecionada, áudio da guia compartilhado e microfone autorizado quando necessário.','Chamada inicial realizada com uma pessoa dizendo o nome por vez, quando usar identificação de locutores.','Áudio gravado/importado e participantes conferidos.','Associação entre vozes e nomes revisada.','Foto registrada com consentimento, se desejada.','Transcrição revisada.','Análise semântica concluída.','Ata e demais documentos revisados/salvos.','Responsáveis, prazos, prioridades e status das ações ajustados.','Perguntas ao chat verificadas e histórico apagado somente quando desejado.','Pasta do Drive arquivada/atualizada sem duplicidade e com PDFs.','Card do Trello criado/atualizado e links conferidos.','Reunião excluída somente quando realmente necessário.'])
 callout(doc,'Fluxo ideal','Google Meet/presencial → gravação → transcrição → revisão → análise → documentos → ações → Drive → Trello.')
 h(doc,'Perfis',2)
 t=doc.add_table(rows=1,cols=3); t.alignment=WD_TABLE_ALIGNMENT.CENTER; t.autofit=False
@@ -230,6 +237,6 @@ for row in [('Usuário','Criar/processar reuniões; editar documentos e ações;
     cells=t.add_row().cells
     for c,w in zip(cells,[1.3,2.5,2.7]): c.width=Inches(w); set_cell_margins(c)
     for c,txt in zip(cells,row): font(c.paragraphs[0].add_run(txt),8.8,c is cells[0],GREEN if c is cells[0] else INK)
-add_text(doc,'Manual versão 1.1, preparado a partir da versão publicada do KeyNotesAI e de telas reais do sistema. A interface poderá receber ajustes sem alterar o fluxo essencial.',color=MUTED,size=8,after=0,align=WD_ALIGN_PARAGRAPH.CENTER)
+add_text(doc,'Manual versão 1.2, preparado a partir da versão publicada do KeyNotesAI e de telas reais do sistema. A interface poderá receber ajustes sem alterar o fluxo essencial.',color=MUTED,size=8,after=0,align=WD_ALIGN_PARAGRAPH.CENTER)
 
 OUT.parent.mkdir(parents=True,exist_ok=True); doc.save(OUT); print(OUT)
