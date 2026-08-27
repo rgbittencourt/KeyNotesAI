@@ -7,6 +7,7 @@ import {
   type TranscriptionQuality,
 } from "./chunked-transcription";
 import {
+  audioExtension,
   transcribeAudioWithOpenAI,
   type SpeakerSegment,
 } from "./openai-transcription";
@@ -226,8 +227,8 @@ export default function RealFeatureView(p: Props) {
         error instanceof Error
           ? error.message
           : "Não foi possível transcrever pela OpenAI";
-      if (message.includes("25 MB") || message.includes("muito grande")) {
-        setTranscriptionStatus("Áudio grande: iniciando transcrição local em partes…");
+      if (message.includes("25 MB") || message.includes("muito grande") || message.includes("corrupted") || message.includes("unsupported")) {
+        setTranscriptionStatus("O serviço não aceitou o contêiner; iniciando transcrição local em partes…");
         setTranscriptionProgress(1);
         try {
           const blob = await fetch(selected.url).then((response) => response.blob());
@@ -269,7 +270,7 @@ export default function RealFeatureView(p: Props) {
       const form = new FormData();
       const { meetingPhotoBlob: _photo, ...meeting } = selected;
       form.set("meeting", JSON.stringify(meeting));
-      form.set("audio", audio, `${selected.name}.webm`);
+      form.set("audio", audio, `${selected.name}.${audioExtension(audio)}`);
       if (selected.meetingPhotoBlob)
         form.set(
           "photo",
@@ -638,7 +639,7 @@ export default function RealFeatureView(p: Props) {
                   <div className="record-file-actions">
                     <a
                       href={r.url}
-                      download={`${r.name}.webm`}
+                      download={`${r.name}.${audioExtension(new Blob([], {type:r.audioMimeType||"audio/webm"}))}`}
                       onClick={(e) => e.stopPropagation()}
                     >
                       ↓ Baixar

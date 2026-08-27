@@ -27,6 +27,7 @@ export type DeviceRecording = {
   duration: string;
   size: string;
   url: string;
+  audioMimeType?: string;
   meetingDate?: string;
   meetingTime?: string;
   participants?: string;
@@ -127,6 +128,7 @@ async function loadRecordings(): Promise<DeviceRecording[]> {
           .map((r) => ({
             ...r,
             url: URL.createObjectURL(r.blob),
+            audioMimeType: r.audioMimeType || r.blob?.type,
             meetingPhotoUrl: r.meetingPhotoBlob
               ? URL.createObjectURL(r.meetingPhotoBlob)
               : undefined,
@@ -885,7 +887,11 @@ export default function Home() {
     try {
       const recordingSource = newMeetingRecordingSource;
       const stream = await captureRecordingStream(recordingSource);
-      const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 32000 });
+      const preferredMimeType=["audio/webm;codecs=opus","audio/mp4;codecs=mp4a.40.2","audio/mp4","audio/webm"].find(type=>MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, {
+        audioBitsPerSecond: 32000,
+        ...(preferredMimeType ? { mimeType: preferredMimeType } : {}),
+      });
       const title =
           meetingTitleNow.trim() ||
           `Reunião · ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
@@ -918,6 +924,7 @@ export default function Home() {
           participants: participantsRef.current.join("\n"),
           duration: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
           size: `${(blob.size / 1024 / 1024).toFixed(1)} MB`,
+          audioMimeType: blob.type,
           transcriptionMode,
           recordingSource,
         };
@@ -972,6 +979,7 @@ export default function Home() {
       createdAt: new Date().toLocaleDateString("pt-BR"),
       duration: "áudio importado",
       size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+      audioMimeType: file.type,
       transcriptionMode: newMeetingTranscriptionMode,
     };
     await persistRecording({ ...base, blob: file });

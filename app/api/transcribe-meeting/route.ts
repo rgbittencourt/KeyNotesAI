@@ -4,6 +4,25 @@ const MAX_AUDIO_BYTES=25*1024*1024;
 type Segment={speaker:string;start:number;end:number;text:string};
 const clean=(value:FormDataEntryValue|null)=>typeof value==="string"?value.trim():"";
 const normalize=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+async function normalizeAudioFile(audio:File){
+ const bytes=new Uint8Array(await audio.slice(0,16).arrayBuffer());
+ const ascii=String.fromCharCode(...bytes);
+ let extension="",mime="";
+ if(bytes[0]===0x1a&&bytes[1]===0x45&&bytes[2]===0xdf&&bytes[3]===0xa3){extension="webm";mime="audio/webm"}
+ else if(ascii.slice(4,8)==="ftyp"){extension="m4a";mime="audio/mp4"}
+ else if(ascii.slice(0,4)==="RIFF"&&ascii.slice(8,12)==="WAVE"){extension="wav";mime="audio/wav"}
+ else if(ascii.slice(0,4)==="OggS"){extension="ogg";mime="audio/ogg"}
+ else if(ascii.slice(0,4)==="fLaC"){extension="flac";mime="audio/flac"}
+ else if(ascii.slice(0,3)==="ID3"||(bytes[0]===0xff&&(bytes[1]&0xe0)===0xe0)){extension="mp3";mime="audio/mpeg"}
+ else{
+  const supplied=audio.type.toLowerCase();
+  if(supplied.includes("webm")){extension="webm";mime="audio/webm"}
+  else if(supplied.includes("mp4")||supplied.includes("m4a")||supplied.includes("aac")){extension="m4a";mime="audio/mp4"}
+  else if(supplied.includes("mpeg")||supplied.includes("mp3")){extension="mp3";mime="audio/mpeg"}
+ }
+ if(!extension)throw new Error("Formato de áudio não reconhecido. Baixe o arquivo e converta-o para MP3, M4A ou WAV.");
+ return new File([audio],`reuniao.${extension}`,{type:mime});
+}
 function associateSpeakers(segments:Segment[],participantsText:string){
  const participants=participantsText.split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean),mapping:Record<string,string>={};
  for(const segment of segments){
@@ -29,10 +48,12 @@ export async function POST(request:Request){
   const data=await request.formData(),audio=data.get("audio"),diarize=clean(data.get("diarize"))==="true",participants=clean(data.get("participants"));
   if(!(audio instanceof File)||audio.size===0)return Response.json({error:"Envie um arquivo de áudio válido."},{status:400});
   if(audio.size>MAX_AUDIO_BYTES)return Response.json({error:"O áudio excede 25 MB. Use a transcrição híbrida ou divida a gravação."},{status:413});
+  let normalizedAudio:File;
+  try{normalizedAudio=await normalizeAudioFile(audio)}catch(error){return Response.json({error:error instanceof Error?error.message:"Formato de áudio não reconhecido."},{status:415})}
   await consumeUsage(user.email);
   reservedEmail=user.email;
   const upstream=new FormData();
-  upstream.set("file",audio,audio.name||"reuniao.webm");
+  upstream.set("file",normalizedAudio,normalizedAudio.name);
   upstream.set("model",diarize?"gpt-4o-transcribe-diarize":process.env.OPENAI_TRANSCRIPTION_MODEL||"gpt-4o-mini-transcribe");
   upstream.set("language","pt");
   upstream.set("response_format",diarize?"diarized_json":"json");
