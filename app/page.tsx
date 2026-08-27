@@ -932,7 +932,9 @@ export default function Home() {
         setMeetingTitleNow("");
         notify("Gravação encerrada. Confirme a presença antes de salvar.");
       };
-      recorder.start(1000);
+      // Um único contêiner final evita WebM/MP4 fragmentado, que pode tocar no
+      // navegador mas ser recusado por serviços de transcrição.
+      recorder.start();
       recorderRef.current = recorder;
       streamRef.current = stream;
       const displayVideoTrack = sourceStreamsRef.current
