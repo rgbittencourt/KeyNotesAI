@@ -73,6 +73,8 @@ export default function RealFeatureView(p: Props) {
     [analysisIssue, setAnalysisIssue] = useState(""),
     [transcriptionStatus, setTranscriptionStatus] = useState(""),
     [transcriptionProgress, setTranscriptionProgress] = useState(0),
+    [transcriptionStartedAt, setTranscriptionStartedAt] = useState(0),
+    [transcriptionElapsed, setTranscriptionElapsed] = useState(0),
     [transcriptionQuality, setTranscriptionQuality] =
       useState<TranscriptionQuality>("accurate");
   const selected = p.recordings.find(
@@ -121,6 +123,11 @@ export default function RealFeatureView(p: Props) {
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop()),
     [],
   );
+  useEffect(()=>{
+    if(!transcribing||!transcriptionStartedAt)return;
+    const update=()=>setTranscriptionElapsed(Math.floor((Date.now()-transcriptionStartedAt)/1000));
+    update();const timer=window.setInterval(update,1000);return()=>window.clearInterval(timer);
+  },[transcribing,transcriptionStartedAt]);
   const allActions = useMemo(
     () =>
       p.recordings.flatMap((r) =>
@@ -173,6 +180,7 @@ export default function RealFeatureView(p: Props) {
   async function transcribeLocally() {
     if (!selected || transcribing) return;
     setTranscribing(true);
+    setTranscriptionStartedAt(Date.now());setTranscriptionElapsed(0);
     setTranscriptionProgress(0);
     setTranscriptionStatus("Preparando o áudio em partes…");
     try {
@@ -204,6 +212,7 @@ export default function RealFeatureView(p: Props) {
   async function transcribeWithOpenAI() {
     if (!selected || transcribing) return;
     setTranscribing(true);
+    setTranscriptionStartedAt(Date.now());setTranscriptionElapsed(0);
     setTranscriptionProgress(0);
     setTranscriptionStatus("Enviando áudio com segurança para a OpenAI…");
     try {
@@ -227,8 +236,8 @@ export default function RealFeatureView(p: Props) {
         error instanceof Error
           ? error.message
           : "Não foi possível transcrever pela OpenAI";
-      if (message.includes("25 MB") || message.includes("muito grande") || message.includes("corrupted") || message.includes("unsupported")) {
-        setTranscriptionStatus("O serviço não aceitou o contêiner; iniciando transcrição local em partes…");
+      if (message.includes("25 MB") || message.includes("muito grande")) {
+        setTranscriptionStatus("Áudio acima do limite: iniciando transcrição local em partes…");
         setTranscriptionProgress(1);
         try {
           const blob = await fetch(selected.url).then((response) => response.blob());
@@ -786,33 +795,33 @@ export default function RealFeatureView(p: Props) {
                 )}
                 <div className="local-transcriber">
                   <div className="mode-heading">
-                    <strong>Como transcrever esta reunião?</strong>
-                    <small>O modo híbrido é sempre o padrão e mantém o áudio neste aparelho.</small>
+                    <strong>Transcrição profissional</strong>
+                    <small>O modo recomendado usa a OpenAI para separar os locutores e criar uma revisão assistida.</small>
                   </div>
                   <div className="mode-options">
-                    <label className={(selected.transcriptionMode||"hybrid")==="hybrid"?"selected":""}>
-                      <input type="radio" name="transcription-mode" checked={(selected.transcriptionMode||"hybrid")==="hybrid"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"hybrid"})}/>
-                      <span><b>Híbrido</b><small>Transcrição local + documentos pela OpenAI · ~R$ 0,50/h</small></span>
+                    <label className={(selected.transcriptionMode||"diarized")==="diarized"?"selected recommended":""}>
+                      <input type="radio" name="transcription-mode" checked={(selected.transcriptionMode||"diarized")==="diarized"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"diarized"})}/>
+                      <span><b>Recomendado · OpenAI + locutores</b><small>Transcreve, separa as vozes e permite identificar cada pessoa ouvindo um trecho</small></span>
                     </label>
                     <label className={selected.transcriptionMode==="openai"?"selected":""}>
                       <input type="radio" name="transcription-mode" checked={selected.transcriptionMode==="openai"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"openai"})}/>
-                      <span><b>Totalmente OpenAI</b><small>Áudio e documentos pela API · ~R$ 2,00/h</small></span>
+                      <span><b>OpenAI sem locutores</b><small>Mais simples, sem separar quem falou cada trecho</small></span>
                     </label>
-                    <label className={selected.transcriptionMode==="diarized"?"selected":""}>
-                      <input type="radio" name="transcription-mode" checked={selected.transcriptionMode==="diarized"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"diarized"})}/>
-                      <span><b>OpenAI + locutores</b><small>Separa as vozes e relaciona nomes pela chamada inicial</small></span>
+                    <label className={selected.transcriptionMode==="hybrid"?"selected":""}>
+                      <input type="radio" name="transcription-mode" checked={selected.transcriptionMode==="hybrid"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"hybrid"})}/>
+                      <span><b>Local de emergência</b><small>Processa em blocos de 3 minutos no Mac; mais lento e sem separar locutores</small></span>
                     </label>
                   </div>
                   <div className="transcription-controls">
-                    {(selected.transcriptionMode||"hybrid")==="hybrid"&&<select value={transcriptionQuality} onChange={(e)=>setTranscriptionQuality(e.target.value as TranscriptionQuality)} disabled={transcribing} aria-label="Qualidade da transcrição">
+                    {selected.transcriptionMode==="hybrid"&&<select value={transcriptionQuality} onChange={(e)=>setTranscriptionQuality(e.target.value as TranscriptionQuality)} disabled={transcribing} aria-label="Qualidade da transcrição">
                       <option value="accurate">Mais preciso</option><option value="balanced">Equilibrado</option><option value="fast">Mais rápido</option>
                     </select>}
-                    <button onClick={(selected.transcriptionMode||"hybrid")==="hybrid"?transcribeLocally:transcribeWithOpenAI} disabled={transcribing}>
-                      {transcribing?"Transcrevendo…":(selected.transcriptionMode||"hybrid")==="hybrid"?"Transcrever no aparelho":selected.transcriptionMode==="diarized"?"Transcrever e identificar locutores":"Transcrever pela OpenAI"}
+                    <button onClick={selected.transcriptionMode==="hybrid"?transcribeLocally:transcribeWithOpenAI} disabled={transcribing}>
+                      {transcribing?"Processando…":selected.transcriptionMode==="hybrid"?"Transcrever no aparelho":"Transcrever e identificar locutores"}
                     </button>
                   </div>
                   {transcriptionStatus && (
-                    <div className="transcription-progress">
+                    <div className={`transcription-progress ${transcribing&&transcriptionProgress===0?"indeterminate":""}`}>
                       <i style={{ width: `${transcriptionProgress}%` }} />
                       <span>
                         {transcriptionStatus}
@@ -820,34 +829,12 @@ export default function RealFeatureView(p: Props) {
                         transcriptionProgress < 100
                           ? ` · ${transcriptionProgress}%`
                           : ""}
+                        {transcribing&&transcriptionElapsed>0?` · ${Math.floor(transcriptionElapsed/60)}:${String(transcriptionElapsed%60).padStart(2,"0")}`:""}
                       </span>
                     </div>
                   )}
                 </div>
-                {selected.speakerSegments?.length ? (
-                  <section className="speaker-review">
-                    <div>
-                      <strong>Conferir identificação dos locutores</strong>
-                      <small>Revise os nomes antes de gerar os documentos. A chamada inicial é usada para a associação automática.</small>
-                    </div>
-                    <div className="speaker-review-grid">
-                      {[...new Set(selected.speakerSegments.map(item=>item.speaker))].map((speaker,index)=>(
-                        <label key={speaker}>
-                          <span>{speakerLabel(speaker,{})}</span>
-                          <input
-                            list={`participants-${selected.id}`}
-                            value={selected.speakerNames?.[speaker]||""}
-                            placeholder={`Nome do locutor ${index+1}`}
-                            onChange={event=>void renameSpeaker(speaker,event.currentTarget.value)}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    <datalist id={`participants-${selected.id}`}>
-                      {(selected.participants||"").split(/[\n,;]+/).map(name=>name.trim()).filter(Boolean).map(name=><option value={name} key={name}/>) }
-                    </datalist>
-                  </section>
-                ):null}
+                {selected.speakerSegments?.length ? <SpeakerReview recording={selected} rename={renameSpeaker}/>:null}
                 <label className="transcript-editor">
                   <strong>Transcrição da reunião</strong>
                   <small>
@@ -1149,6 +1136,34 @@ export default function RealFeatureView(p: Props) {
       </div>
     </section>
   );
+}
+function SpeakerReview({recording,rename}:{recording:DeviceRecording;rename:(speaker:string,name:string)=>Promise<void>}){
+  const audioRef=useRef<HTMLAudioElement|null>(null);
+  const [playing,setPlaying]=useState("");
+  const [stopAt,setStopAt]=useState(0);
+  const speakers=useMemo(()=>{
+    const grouped=new Map<string,SpeakerSegment[]>();
+    for(const segment of recording.speakerSegments||[])grouped.set(segment.speaker,[...(grouped.get(segment.speaker)||[]),segment]);
+    return[...grouped.entries()].map(([speaker,segments])=>({speaker,sample:[...segments].sort((a,b)=>Math.min(10,b.end-b.start)-Math.min(10,a.end-a.start))[0]}));
+  },[recording.speakerSegments]);
+  async function playSample(speaker:string,sample:SpeakerSegment){
+    const audio=audioRef.current;if(!audio)return;
+    if(playing===speaker&&!audio.paused){audio.pause();setPlaying("");return}
+    audio.currentTime=Math.max(0,sample.start);setStopAt(Math.min(sample.end,sample.start+10));setPlaying(speaker);
+    try{await audio.play()}catch{setPlaying("")}
+  }
+  return <section className="speaker-review">
+    <div><strong>Identifique os locutores ouvindo a própria reunião</strong><small>O sistema separou as vozes. Ouça uma amostra e associe cada locutor a um nome da presença ou escreva outro nome.</small></div>
+    <audio ref={audioRef} src={recording.url} preload="metadata" onTimeUpdate={event=>{if(stopAt&&event.currentTarget.currentTime>=stopAt){event.currentTarget.pause();setPlaying("")}}} onEnded={()=>setPlaying("")} />
+    <div className="speaker-review-grid">
+      {speakers.map(({speaker,sample},index)=><article key={speaker}>
+        <button className={playing===speaker?"playing":""} onClick={()=>void playSample(speaker,sample)} aria-label={`Ouvir amostra do locutor ${index+1}`}>{playing===speaker?"Ⅱ":"▶"}</button>
+        <div><span>{speakerLabel(speaker,{})}</span><small>{Math.floor(sample.start/60)}:{String(Math.floor(sample.start%60)).padStart(2,"0")} · “{sample.text.slice(0,110)}{sample.text.length>110?"…":""}”</small></div>
+        <input list={`participants-${recording.id}`} value={recording.speakerNames?.[speaker]||""} placeholder={`Escreva o nome do locutor ${index+1}`} onChange={event=>void rename(speaker,event.currentTarget.value)}/>
+      </article>)}
+    </div>
+    <datalist id={`participants-${recording.id}`}>{(recording.participants||"").split(/[\n,;]+/).map(name=>name.trim()).filter(Boolean).map(name=><option value={name} key={name}/>)}</datalist>
+  </section>
 }
 function MeetingResources({recording,update,notify}:{recording:DeviceRecording;update:Props["updateRecording"];notify:Props["notify"]}) {
   const fileRef=useRef<HTMLInputElement|null>(null);

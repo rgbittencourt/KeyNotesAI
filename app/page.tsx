@@ -706,7 +706,7 @@ export default function Home() {
   const [meetingTime, setMeetingTime] = useState("");
   const [meetingTitleNow, setMeetingTitleNow] = useState("");
   const [newMeetingTranscriptionMode, setNewMeetingTranscriptionMode] =
-    useState<"hybrid" | "openai" | "diarized">("hybrid");
+    useState<"hybrid" | "openai" | "diarized">("diarized");
   const [newMeetingRecordingSource, setNewMeetingRecordingSource] = useState<
     "microphone" | "google-meet" | "google-meet-microphone"
   >("google-meet-microphone");
@@ -889,7 +889,7 @@ export default function Home() {
       const stream = await captureRecordingStream(recordingSource);
       const preferredMimeType=["audio/webm;codecs=opus","audio/mp4;codecs=mp4a.40.2","audio/mp4","audio/webm"].find(type=>MediaRecorder.isTypeSupported(type));
       const recorder = new MediaRecorder(stream, {
-        audioBitsPerSecond: 32000,
+        audioBitsPerSecond: 24000,
         ...(preferredMimeType ? { mimeType: preferredMimeType } : {}),
       });
       const title =
