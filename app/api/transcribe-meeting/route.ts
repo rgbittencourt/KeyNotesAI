@@ -33,18 +33,20 @@ export async function POST(request:Request){
   reservedEmail=user.email;
   const upstream=new FormData();
   upstream.set("file",audio,audio.name||"reuniao.webm");
-  upstream.set("model",diarize?"gpt-4o-transcribe-diarize":process.env.OPENAI_TRANSCRIPTION_MODEL||"gpt-transcribe");
+  upstream.set("model",diarize?"gpt-4o-transcribe-diarize":process.env.OPENAI_TRANSCRIPTION_MODEL||"gpt-4o-mini-transcribe");
   upstream.set("language","pt");
   upstream.set("response_format",diarize?"diarized_json":"json");
   if(diarize)upstream.set("chunking_strategy","auto");
-  const response=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{authorization:`Bearer ${key}`},body:upstream,signal:AbortSignal.timeout(120000)});
-  const result=await response.json().catch(()=>null)as{error?:{code?:string};text?:unknown;segments?:unknown}|null;
+  const response=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{authorization:`Bearer ${key}`},body:upstream,signal:AbortSignal.timeout(600000)});
+  const result=await response.json().catch(()=>null)as{error?:{code?:string;message?:string;type?:string};text?:unknown;segments?:unknown}|null;
   if(!response.ok){
    await refundUsage(user.email);
    reservedEmail=null;
    if(result?.error?.code==="insufficient_quota")return Response.json({error:"A transcrição pela OpenAI está sem créditos disponíveis."},{status:503});
    if(response.status===429)return Response.json({error:"A transcrição está temporariamente ocupada. Aguarde e tente novamente."},{status:429});
-   return Response.json({error:"A OpenAI não conseguiu transcrever este áudio."},{status:502});
+   const detail=result?.error?.message?.trim();
+   console.error("OpenAI transcription rejected",{status:response.status,code:result?.error?.code,type:result?.error?.type,message:detail});
+   return Response.json({error:detail?`A OpenAI recusou o áudio: ${detail}`:"A OpenAI não conseguiu transcrever este áudio. Tente o modo híbrido."},{status:502});
   }
   reservedEmail=null;
   if(typeof result?.text!=="string"||!result.text.trim())throw new Error("Transcrição vazia");

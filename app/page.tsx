@@ -69,7 +69,9 @@ export type DeviceRecording = {
     text: string;
     createdAt: string;
   }>;
+  attachments?: MeetingAttachment[];
 };
+export type MeetingAttachment={id:string;name:string;type:"file"|"link";mimeType?:string;size?:string;blob?:Blob;url?:string;externalUrl?:string;createdAt:string};
 type ScheduledMeeting = {
   id: number;
   title: string;
@@ -128,6 +130,11 @@ async function loadRecordings(): Promise<DeviceRecording[]> {
             meetingPhotoUrl: r.meetingPhotoBlob
               ? URL.createObjectURL(r.meetingPhotoBlob)
               : undefined,
+            attachments: (r.attachments || []).map((attachment: MeetingAttachment) =>
+              attachment.type === "file" && attachment.blob
+                ? { ...attachment, url: URL.createObjectURL(attachment.blob) }
+                : attachment,
+            ),
           }))
           .reverse(),
       );
@@ -666,6 +673,7 @@ export default function Home() {
   );
   const [active, setActive] = useState("Visão geral");
   const [recording, setRecording] = useState(false);
+  const [recordingPaused,setRecordingPaused]=useState(false);
   const [requestingMic, setRequestingMic] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [deviceRecordings, setDeviceRecordings] = useState<DeviceRecording[]>(
@@ -677,6 +685,8 @@ export default function Home() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
+  const pausedAtRef=useRef(0);
+  const pausedDurationRef=useRef(0);
   const participantsRef = useRef<string[]>([]);
   const audioImportRef = useRef<HTMLInputElement | null>(null);
   const [recordingIssue, setRecordingIssue] = useState("");
@@ -700,6 +710,8 @@ export default function Home() {
   >("google-meet-microphone");
   const [liveParticipants, setLiveParticipants] = useState<string[]>([]);
   const [listeningParticipant, setListeningParticipant] = useState(false);
+  const[pendingMeeting,setPendingMeeting]=useState<(Omit<DeviceRecording,"url">&{blob:Blob})|null>(null);
+  const[postMeetingName,setPostMeetingName]=useState("");
   const [driveIntegration, setDriveIntegration] =
     useState<DriveStatus | null>(null);
   const [trelloIntegration,setTrelloIntegration]=useState<TrelloStatus|null>(null);
@@ -787,16 +799,17 @@ export default function Home() {
     } catch {}
   }, []);
   useEffect(() => {
-    if (!recording) return;
+    if (!recording||recordingPaused) return;
     const timer = window.setInterval(
       () =>
         setRecordingSeconds(
-          Math.floor((Date.now() - startedAtRef.current) / 1000),
+          Math.floor((Date.now() - startedAtRef.current-pausedDurationRef.current) / 1000),
         ),
       1000,
     );
     return () => window.clearInterval(timer);
-  }, [recording]);
+  }, [recording,recordingPaused]);
+  function togglePauseRecording(){const recorder=recorderRef.current;if(!recorder||recorder.state==="inactive")return;if(recorder.state==="recording"){recorder.pause();pausedAtRef.current=Date.now();setRecordingPaused(true);notify("Gravação pausada") }else if(recorder.state==="paused"){pausedDurationRef.current+=Date.now()-pausedAtRef.current;pausedAtRef.current=0;recorder.resume();setRecordingPaused(false);notify("Gravação retomada")}}
   async function releaseRecordingSources() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     sourceStreamsRef.current.forEach((stream) =>
@@ -851,9 +864,11 @@ export default function Home() {
   }
   async function toggleRecording() {
     if (recording) {
+      if(recordingPaused&&pausedAtRef.current)pausedDurationRef.current+=Date.now()-pausedAtRef.current;
       recorderRef.current?.stop();
       await releaseRecordingSources();
       setRecording(false);
+      setRecordingPaused(false);
       return;
     }
     if (
@@ -879,6 +894,7 @@ export default function Home() {
       participantsRef.current = [];
       setLiveParticipants([]);
       startedAtRef.current = Date.now();
+      pausedAtRef.current=0;pausedDurationRef.current=0;
       setRecordingSeconds(0);
       setRecordingIssue("");
       recorder.ondataavailable = (e) => {
@@ -888,10 +904,7 @@ export default function Home() {
         const blob = new Blob(chunksRef.current, {
           type: recorder.mimeType || "audio/webm",
         });
-        const seconds = Math.max(
-          1,
-          Math.round((Date.now() - startedAtRef.current) / 1000),
-        );
+        const seconds = Math.max(1,Math.round((Date.now()-startedAtRef.current-pausedDurationRef.current)/1000));
         const now = new Date();
         const base = {
           id: Date.now(),
@@ -908,14 +921,9 @@ export default function Home() {
           transcriptionMode,
           recordingSource,
         };
-        await persistRecording({ ...base, blob });
-        setDeviceRecordings((r) => [
-          { ...base, url: URL.createObjectURL(blob) },
-          ...r,
-        ]);
+        setPendingMeeting({...base,blob});
         setMeetingTitleNow("");
-        setActive("Arquivos");
-        notify("Gravação e lista de presença salvas");
+        notify("Gravação encerrada. Confirme a presença antes de salvar.");
       };
       recorder.start(1000);
       recorderRef.current = recorder;
@@ -924,12 +932,14 @@ export default function Home() {
         .flatMap((sourceStream) => sourceStream.getVideoTracks())[0];
       if (displayVideoTrack)
         displayVideoTrack.onended = () => {
-          if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+          if (recorderRef.current?.state !== "inactive") recorderRef.current?.stop();
           void releaseRecordingSources();
           setRecording(false);
-          notify("Compartilhamento do Google Meet encerrado; gravação salva");
+          setRecordingPaused(false);
+          notify("Captura encerrada. Confirme a presença antes de salvar.");
         };
       setRecording(true);
+      setRecordingPaused(false);
       setActive("Reuniões");
       notify(
         recordingSource === "microphone"
@@ -973,6 +983,7 @@ export default function Home() {
     setActive("Arquivos");
     notify("Áudio importado e salvo no aparelho");
   }
+  async function finalizePendingMeeting(){if(!pendingMeeting)return;const record={...pendingMeeting,participants:participantsRef.current.join("\n")};await persistRecording(record);setDeviceRecordings(rows=>[{...record,url:URL.createObjectURL(record.blob)},...rows]);setPendingMeeting(null);setPostMeetingName("");setActive("Arquivos");notify("Reunião, áudio e lista de presença salvos")}
   async function updateRecording(id: number, patch: Partial<DeviceRecording>) {
     await patchRecording(id, patch);
     setDeviceRecordings((rows) =>
@@ -1002,6 +1013,10 @@ export default function Home() {
     await removeRecording(id);
     URL.revokeObjectURL(target.url);
     if (target.meetingPhotoUrl) URL.revokeObjectURL(target.meetingPhotoUrl);
+    target.attachments?.forEach((attachment) => {
+      if (attachment.type === "file" && attachment.url)
+        URL.revokeObjectURL(attachment.url);
+    });
     setDeviceRecordings((rows) => rows.filter((r) => r.id !== id));
     notify(
       body.trashedFolders
@@ -1370,8 +1385,10 @@ export default function Home() {
               notify={notify}
               recordings={deviceRecordings}
               recording={recording}
+              recordingPaused={recordingPaused}
               recordingSeconds={recordingSeconds}
               stopRecording={toggleRecording}
+              togglePauseRecording={togglePauseRecording}
               updateRecording={updateRecording}
               deleteRecording={deleteRecording}
               liveParticipants={liveParticipants}
@@ -1753,11 +1770,11 @@ export default function Home() {
         </footer>
       </section>
       {recording && (
-        <div className="recording-dock" role="status">
+        <div className={`recording-dock ${recordingPaused ? "paused" : ""}`} role="status">
           <div className="recording-live">
             <i />
             <span>
-              <small>GRAVANDO NESTE APARELHO</small>
+              <small>{recordingPaused ? "GRAVAÇÃO PAUSADA" : "GRAVANDO NESTE APARELHO"}</small>
               <strong>
                 {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
                 {String(recordingSeconds % 60).padStart(2, "0")}
@@ -1770,11 +1787,33 @@ export default function Home() {
             ))}
           </div>
           <p>
-            O áudio será salvo em <b>Arquivos</b> quando você encerrar.
+            {recordingPaused ? "O áudio está preservado. Retome quando a reunião continuar." : <>O áudio será salvo em <b>Arquivos</b> quando você encerrar.</>}
           </p>
-          <button onClick={toggleRecording}>
-            <i /> Encerrar e salvar
-          </button>
+          <div className="recording-dock-actions">
+            <button onClick={togglePauseRecording}>{recordingPaused ? "▶ Retomar" : "Ⅱ Pausar"}</button>
+            <button onClick={toggleRecording}><i /> Encerrar</button>
+          </div>
+        </div>
+      )}
+      {pendingMeeting && (
+        <div className="finalize-overlay" role="dialog" aria-modal="true" aria-labelledby="finalize-title">
+          <section className="finalize-panel">
+            <p className="eyebrow">GRAVAÇÃO ENCERRADA</p>
+            <h2 id="finalize-title">Confirme a presença</h2>
+            <p>Você pode registrar nomes por voz agora, completar manualmente e salvar quando terminar.</p>
+            <button className={`voice-attendance ${listeningParticipant ? "listening" : ""}`} onClick={captureParticipant}>
+              {listeningParticipant ? "Ouvindo o nome…" : "◉ Registrar uma pessoa por voz"}
+            </button>
+            <div className="finalize-manual">
+              <input value={postMeetingName} onChange={(event)=>setPostMeetingName(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"&&postMeetingName.trim()){registerParticipant(postMeetingName);setPostMeetingName("")}}} placeholder="Ou digite o nome da pessoa" />
+              <button onClick={()=>{if(postMeetingName.trim()){registerParticipant(postMeetingName);setPostMeetingName("")}}}>Adicionar</button>
+            </div>
+            <div className="finalize-presence-list">
+              <strong>{liveParticipants.length} participante(s)</strong>
+              {liveParticipants.length ? <ul>{liveParticipants.map(name=><li key={name}>✓ {name}</li>)}</ul> : <p>Nenhum nome registrado. Você ainda pode salvar e preencher depois nos dados da reunião.</p>}
+            </div>
+            <button className="finalize-save" onClick={()=>void finalizePendingMeeting()}>Salvar reunião e abrir os arquivos</button>
+          </section>
         </div>
       )}
       {toast && (

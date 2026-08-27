@@ -11,15 +11,17 @@ import {
   type SpeakerSegment,
 } from "./openai-transcription";
 import { openProfessionalDocument } from "./professional-documents";
-import type { DeviceRecording } from "./page";
+import type { DeviceRecording, MeetingAttachment } from "./page";
 
 type Props = {
   isAdmin: boolean;
   active: string;
   recordings: DeviceRecording[];
   recording: boolean;
+  recordingPaused: boolean;
   recordingSeconds: number;
   stopRecording: () => void;
+  togglePauseRecording: () => void;
   notify: (s: string) => void;
   updateRecording: (
     id: number,
@@ -201,11 +203,10 @@ export default function RealFeatureView(p: Props) {
   async function transcribeWithOpenAI() {
     if (!selected || transcribing) return;
     setTranscribing(true);
-    setTranscriptionProgress(15);
+    setTranscriptionProgress(0);
     setTranscriptionStatus("Enviando áudio com segurança para a OpenAI…");
     try {
       const blob = await fetch(selected.url).then((r) => r.blob());
-      setTranscriptionProgress(45);
       setTranscriptionStatus("A OpenAI está transcrevendo a reunião…");
       const diarize=selected.transcriptionMode==="diarized";
       const result = await transcribeAudioWithOpenAI(blob,{diarize,participants:selected.participants});
@@ -225,7 +226,28 @@ export default function RealFeatureView(p: Props) {
         error instanceof Error
           ? error.message
           : "Não foi possível transcrever pela OpenAI";
-      setTranscriptionStatus(message);
+      if (message.includes("25 MB") || message.includes("muito grande")) {
+        setTranscriptionStatus("Áudio grande: iniciando transcrição local em partes…");
+        setTranscriptionProgress(1);
+        try {
+          const blob = await fetch(selected.url).then((response) => response.blob());
+          const text = await transcribeAudioInChunks(blob, (status, progress) => {
+            setTranscriptionProgress(progress);
+            setTranscriptionStatus(status);
+          }, transcriptionQuality);
+          setDraft(text);
+          await p.updateRecording(selected.id, { transcript: text, transcriptionMode: "hybrid" });
+          setTranscriptionProgress(100);
+          setTranscriptionStatus("Transcrição local em partes concluída");
+          p.notify("Áudio grande transcrito em partes no aparelho");
+          return;
+        } catch (fallbackError) {
+          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Falha no modo local";
+          setTranscriptionStatus(`OpenAI: ${message} Modo local: ${fallbackMessage}`);
+        }
+      } else {
+        setTranscriptionStatus(message);
+      }
       p.notify("Falha na transcrição pela OpenAI");
     } finally {
       setTranscribing(false);
@@ -518,8 +540,8 @@ export default function RealFeatureView(p: Props) {
                 <h1>Nova reunião</h1>
                 <p>Captura real neste aparelho</p>
               </div>
-              <div className="live-pill">
-                <i /> AO VIVO ·{" "}
+              <div className={`live-pill ${p.recordingPaused ? "paused" : ""}`}>
+                <i /> {p.recordingPaused ? "PAUSADA" : "AO VIVO"} ·{" "}
                 {String(Math.floor(p.recordingSeconds / 60)).padStart(2, "0")}:
                 {String(p.recordingSeconds % 60).padStart(2, "0")}
               </div>
@@ -530,12 +552,12 @@ export default function RealFeatureView(p: Props) {
                   <span>●</span>
                 </div>
                 <p className="eyebrow">CAPTURA DE ÁUDIO</p>
-                <h2>Gravação em andamento</h2>
+                <h2>{p.recordingPaused ? "Gravação pausada" : "Gravação em andamento"}</h2>
                 <strong>
                   {String(Math.floor(p.recordingSeconds / 60)).padStart(2, "0")}
                   :{String(p.recordingSeconds % 60).padStart(2, "0")}
                 </strong>
-                <div className="capture-bars">
+                <div className={`capture-bars ${p.recordingPaused ? "paused" : ""}`}>
                   {Array.from({ length: 12 }, (_, i) => (
                     <i key={i} />
                   ))}
@@ -544,9 +566,10 @@ export default function RealFeatureView(p: Props) {
                   Ao encerrar, o áudio será registrado no histórico e aberto em
                   Arquivos.
                 </p>
-                <button onClick={p.stopRecording}>
-                  <i /> Encerrar e salvar reunião
-                </button>
+                <div className="capture-actions">
+                  <button onClick={p.togglePauseRecording}>{p.recordingPaused ? "▶ Retomar gravação" : "Ⅱ Pausar gravação"}</button>
+                  <button onClick={p.stopRecording}><i /> Encerrar gravação</button>
+                </div>
               </article>
               <SmartAttendance
                 participants={p.liveParticipants}
@@ -667,6 +690,7 @@ export default function RealFeatureView(p: Props) {
                   update={p.updateRecording}
                   notify={p.notify}
                 />
+                <MeetingResources recording={selected} update={p.updateRecording} notify={p.notify} />
                 <div className="meeting-photo-card">
                   <input
                     ref={filePhotoRef}
@@ -1124,6 +1148,35 @@ export default function RealFeatureView(p: Props) {
       </div>
     </section>
   );
+}
+function MeetingResources({recording,update,notify}:{recording:DeviceRecording;update:Props["updateRecording"];notify:Props["notify"]}) {
+  const fileRef=useRef<HTMLInputElement|null>(null);
+  const [linkName,setLinkName]=useState("");
+  const [linkUrl,setLinkUrl]=useState("");
+  const attachments=recording.attachments||[];
+  async function addFiles(files?:FileList|null){
+    if(!files?.length)return;
+    const additions:MeetingAttachment[]=Array.from(files).map(file=>({id:crypto.randomUUID(),name:file.name,type:"file",mimeType:file.type,size:`${(file.size/1024/1024).toFixed(2)} MB`,blob:file,url:URL.createObjectURL(file),createdAt:new Date().toISOString()}));
+    await update(recording.id,{attachments:[...attachments,...additions]});
+    notify(`${additions.length} arquivo(s) vinculado(s) à reunião`);
+  }
+  async function addLink(){
+    if(!linkUrl.trim())return notify("Informe o endereço do link");
+    let normalized=linkUrl.trim();if(!/^https?:\/\//i.test(normalized))normalized=`https://${normalized}`;
+    try{new URL(normalized)}catch{return notify("Informe um link válido")}
+    const attachment:MeetingAttachment={id:crypto.randomUUID(),name:linkName.trim()||"Link da reunião",type:"link",externalUrl:normalized,createdAt:new Date().toISOString()};
+    await update(recording.id,{attachments:[...attachments,attachment]});setLinkName("");setLinkUrl("");notify("Link vinculado à reunião");
+  }
+  async function removeAttachment(item:MeetingAttachment){if(item.type==="file"&&item.url)URL.revokeObjectURL(item.url);await update(recording.id,{attachments:attachments.filter(candidate=>candidate.id!==item.id)});notify("Material removido da reunião")}
+  return <details className="meeting-resources" open>
+    <summary><span><b>Materiais utilizados</b><small>Apresentações, memorandos, minutas, decretos, fichas e links externos</small></span><i>{attachments.length} item(ns)</i></summary>
+    <div className="resource-tools">
+      <input ref={fileRef} type="file" multiple hidden onChange={event=>{void addFiles(event.target.files);event.target.value=""}} />
+      <button onClick={()=>fileRef.current?.click()}>＋ Inserir arquivos</button>
+      <div className="resource-link-form"><input value={linkName} onChange={event=>setLinkName(event.target.value)} placeholder="Nome do link (opcional)"/><input value={linkUrl} onChange={event=>setLinkUrl(event.target.value)} placeholder="https://drive.google.com/…"/><button onClick={()=>void addLink()}>Adicionar link</button></div>
+    </div>
+    {attachments.length ? <div className="resource-list">{attachments.map(item=><div key={item.id}><span>{item.type==="file"?"▣":"↗"}</span><div><strong>{item.name}</strong><small>{item.type==="file"?`${item.size||"Arquivo"}${item.mimeType?` · ${item.mimeType}`:""}`:item.externalUrl}</small></div>{item.type==="file"?<a href={item.url} download={item.name}>Baixar</a>:<a href={item.externalUrl} target="_blank" rel="noreferrer">Abrir</a>}<button onClick={()=>void removeAttachment(item)}>Remover</button></div>)}</div>:<p className="resource-empty">Nenhum material vinculado ainda.</p>}
+  </details>
 }
 function MeetingMetadata({
   recording,
