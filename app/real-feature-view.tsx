@@ -236,7 +236,7 @@ export default function RealFeatureView(p: Props) {
         error instanceof Error
           ? error.message
           : "Não foi possível transcrever pela OpenAI";
-      if (message.includes("25 MB") || message.includes("muito grande")) {
+      if ((message.includes("25 MB") || message.includes("muito grande")) && selected.transcriptionMode!=="diarized") {
         setTranscriptionStatus("Áudio acima do limite: iniciando transcrição local em partes…");
         setTranscriptionProgress(1);
         try {
