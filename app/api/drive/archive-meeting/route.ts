@@ -5,6 +5,16 @@ export const runtime = "edge";
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
 const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
 
+export async function GET(request:Request){
+ try{
+  const user=await requireAccess(),url=new URL(request.url),meetingId=url.searchParams.get("meetingId")||"",requestedOwner=(url.searchParams.get("owner")||"").toLowerCase(),owner=user.role==="admin"&&requestedOwner?requestedOwner:user.email;
+  if(!meetingId)return Response.json({error:"Reunião não informada."},{status:400});
+  const row=await(await getRawDb()).prepare("SELECT folder_id,folder_url,files_json,created_at FROM drive_exports WHERE email=? AND local_meeting_id=? ORDER BY created_at DESC LIMIT 1").bind(owner,meetingId).first<Record<string,unknown>>();
+  if(!row)return Response.json({archive:null});
+  return Response.json({archive:{folderId:String(row.folder_id),folderUrl:String(row.folder_url),files:JSON.parse(String(row.files_json||"[]")),createdAt:String(row.created_at)}});
+ }catch(error){return accessError(error)}
+}
+
 export async function POST(request: Request) {
   try {
     const user = await requireAccess();

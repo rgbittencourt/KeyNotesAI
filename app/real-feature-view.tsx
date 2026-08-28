@@ -53,6 +53,7 @@ export default function RealFeatureView(p: Props) {
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
+  const recoveredDriveRef=useRef(new Set<number>());
   const [selectedId, setSelectedId] = useState<number | null>(null),
     [draft, setDraft] = useState(""),
     [question, setQuestion] = useState(""),
@@ -113,6 +114,12 @@ export default function RealFeatureView(p: Props) {
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, [p.recordings, p.updateRecording, p.notify]);
+  useEffect(()=>{
+    if(!selected||selected.driveFolderUrl||recoveredDriveRef.current.has(selected.id))return;
+    recoveredDriveRef.current.add(selected.id);
+    const query=new URLSearchParams({meetingId:String(selected.id)});if(selected.ownerEmail)query.set("owner",selected.ownerEmail);
+    void fetch(`/api/drive/archive-meeting?${query}`).then(async response=>response.ok?await response.json()as{archive?:{folderId:string;folderUrl:string;files:DeviceRecording["driveFiles"];createdAt:string}|null}:null).then(body=>{if(body?.archive)return p.updateRecording(selected.id,{driveFolderId:body.archive.folderId,driveFolderUrl:body.archive.folderUrl,driveFiles:body.archive.files||[],driveSyncedAt:body.archive.createdAt})}).catch(()=>{});
+  },[selected?.id,selected?.driveFolderUrl,selected?.ownerEmail]);
   useEffect(
     () => () =>
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop()),
@@ -225,6 +232,11 @@ export default function RealFeatureView(p: Props) {
     if(unresolved.length){p.notify(`Ainda há ${unresolved.length} voz(es) sem identificação`);return}
     await p.updateRecording(selected.id,{speakerReviewStatus:"confirmed",transcript:draft});
     p.notify("Locutores confirmados. A geração de documentos foi liberada");
+  }
+  async function markUnidentified(){
+    if(!selected?.speakerSegments?.length)return;
+    const speakerNames={...(selected.speakerNames||{})};for(const segment of selected.speakerSegments)if(!speakerNames[segment.speaker]?.trim())speakerNames[segment.speaker]="Não identificado";
+    const transcript=speakerTranscript(selected.speakerSegments,speakerNames);setDraft(transcript);await p.updateRecording(selected.id,{speakerNames,transcript,speakerReviewStatus:"pending"});p.notify("Vozes pendentes mantidas como não identificadas");
   }
   async function archiveInDrive() {
     if (!selected || archivingDrive) return;
@@ -786,7 +798,7 @@ export default function RealFeatureView(p: Props) {
                     </div>
                   )}
                 </div>
-                {selected.speakerSegments?.length ? <SpeakerReview recording={selected} rename={renameSpeaker} confirm={confirmSpeakers}/>:null}
+                {selected.speakerSegments?.length ? <SpeakerReview recording={selected} rename={renameSpeaker} confirm={confirmSpeakers} markUnidentified={markUnidentified}/>:null}
                 <label className="transcript-editor">
                   <strong>Transcrição da reunião</strong>
                   <small>
@@ -869,24 +881,14 @@ export default function RealFeatureView(p: Props) {
                       }
                     />
                   </div>
-                  <div className="drive-archive">
-                    <div>
-                      <strong>Arquivo institucional no Google Drive</strong>
-                      <small>Cria uma subpasta com a gravação e todos os documentos desta reunião.</small>
-                    </div>
-                    <button onClick={archiveInDrive} disabled={archivingDrive}>
-                      {archivingDrive ? "Enviando ao Drive…" : selected.driveFolderUrl ? "Atualizar no Drive" : "Arquivar no Drive"}
-                    </button>
-                    {driveStatus && <p>{driveStatus}</p>}
-                    {selected.driveFolderUrl && (
-                      <div className="drive-links">
-                        <a href={selected.driveFolderUrl} target="_blank" rel="noreferrer">Abrir pasta completa ↗</a>
-                        {(selected.driveFiles || []).map((file) => <a key={file.id} href={file.webViewLink} target="_blank" rel="noreferrer">{file.name} ↗</a>)}
-                      </div>
-                    )}
-                  </div>
                   </>
                 )}
+                {(selected.processedAt||selected.driveFolderUrl)&&<div className="drive-archive">
+                  <div><strong>Documentos institucionais no Google Drive</strong><small>{selected.driveFolderUrl?"Arquivos já preservados e recuperados para esta reunião.":"Cria uma subpasta com a gravação e todos os documentos desta reunião."}</small></div>
+                  {selected.processedAt&&<button onClick={archiveInDrive} disabled={archivingDrive}>{archivingDrive?"Enviando ao Drive…":selected.driveFolderUrl?"Atualizar no Drive":"Arquivar no Drive"}</button>}
+                  {driveStatus&&<p>{driveStatus}</p>}
+                  {selected.driveFolderUrl&&<div className="drive-links"><a href={selected.driveFolderUrl} target="_blank" rel="noreferrer">Abrir pasta completa ↗</a>{(selected.driveFiles||[]).map(file=><a key={file.id} href={file.webViewLink} target="_blank" rel="noreferrer">{file.name} ↗</a>)}</div>}
+                </div>}
               </>
             ) : (
               <Empty text="Grave ou importe um áudio para começar" />
@@ -1089,16 +1091,19 @@ export default function RealFeatureView(p: Props) {
     </section>
   );
 }
-function SpeakerReview({recording,rename,confirm}:{recording:DeviceRecording;rename:(speaker:string,name:string)=>Promise<void>;confirm:()=>Promise<void>}){
+function SpeakerReview({recording,rename,confirm,markUnidentified}:{recording:DeviceRecording;rename:(speaker:string,name:string)=>Promise<void>;confirm:()=>Promise<void>;markUnidentified:()=>Promise<void>}){
   const audioRef=useRef<HTMLAudioElement|null>(null);
   const [playing,setPlaying]=useState("");
   const [stopAt,setStopAt]=useState(0);
+  const [showIdentified,setShowIdentified]=useState(false);
   const speakers=useMemo(()=>{
     const grouped=new Map<string,SpeakerSegment[]>();
     for(const segment of recording.speakerSegments||[])grouped.set(segment.speaker,[...(grouped.get(segment.speaker)||[]),segment]);
     return[...grouped.entries()].map(([speaker,segments])=>({speaker,sample:[...segments].sort((a,b)=>Math.min(10,b.end-b.start)-Math.min(10,a.end-a.start))[0]}));
   },[recording.speakerSegments]);
   const unresolved=speakers.filter(({speaker})=>!recording.speakerNames?.[speaker]?.trim()).length;
+  const identified=speakers.filter(({speaker})=>recording.speakerNames?.[speaker]?.trim()),pending=speakers.filter(({speaker})=>!recording.speakerNames?.[speaker]?.trim()),visible=showIdentified?speakers:pending;
+  const identifiedPeople=[...new Set(identified.map(({speaker})=>recording.speakerNames?.[speaker]?.trim()).filter(Boolean))];
   async function playSample(speaker:string,sample:SpeakerSegment){
     const audio=audioRef.current;if(!audio)return;
     if(playing===speaker&&!audio.paused){audio.pause();setPlaying("");return}
@@ -1106,10 +1111,11 @@ function SpeakerReview({recording,rename,confirm}:{recording:DeviceRecording;ren
     try{await audio.play()}catch{setPlaying("")}
   }
   return <section className="speaker-review">
-    <div><strong>Identifique os locutores ouvindo a própria reunião</strong><small>O sistema encontrou {speakers.length} voz(es). Ouça uma amostra e identifique cada pessoa uma única vez.</small></div>
+    <div><strong>Revise somente o que ainda falta</strong><small>{identified.length} trecho(s) já classificados em {identifiedPeople.length} participante(s). A lista abaixo mostra {showIdentified?"todos os trechos":"somente as vozes pendentes"}.</small></div>
+    {identifiedPeople.length>0&&<div className="identified-speaker-summary">{identifiedPeople.map(name=><span key={name}>✓ {name}</span>)}<button onClick={()=>setShowIdentified(value=>!value)}>{showIdentified?"Ocultar identificados":`Revisar identificados (${identified.length})`}</button></div>}
     <audio ref={audioRef} src={recording.url} preload="metadata" onTimeUpdate={event=>{if(stopAt&&event.currentTarget.currentTime>=stopAt){event.currentTarget.pause();setPlaying("")}}} onEnded={()=>setPlaying("")} />
     <div className="speaker-review-grid">
-      {speakers.map(({speaker,sample},index)=><article key={speaker}>
+      {visible.map(({speaker,sample},index)=><article key={speaker}>
         <button className={playing===speaker?"playing":""} onClick={()=>void playSample(speaker,sample)} aria-label={`Ouvir amostra do locutor ${index+1}`}>{playing===speaker?"Ⅱ":"▶"}</button>
         <div><span>{speakerLabel(speaker,{})}</span><small>{Math.floor(sample.start/60)}:{String(Math.floor(sample.start%60)).padStart(2,"0")} · “{sample.text.slice(0,110)}{sample.text.length>110?"…":""}”</small></div>
         <input list={`participants-${recording.id}`} value={recording.speakerNames?.[speaker]||""} placeholder={`Escreva o nome do locutor ${index+1}`} onChange={event=>void rename(speaker,event.currentTarget.value)}/>
@@ -1118,6 +1124,7 @@ function SpeakerReview({recording,rename,confirm}:{recording:DeviceRecording;ren
     <datalist id={`participants-${recording.id}`}>{(recording.participants||"").split(/[\n,;]+/).map(name=>name.trim()).filter(Boolean).map(name=><option value={name} key={name}/>)}</datalist>
     <div className={`speaker-review-confirm ${unresolved?"pending":"ready"}`}>
       <span>{unresolved?`${unresolved} voz(es) ainda não identificada(s)`:recording.speakerReviewStatus==="confirmed"?"✓ Identificação revisada e confirmada":"Todas as vozes possuem um nome"}</span>
+      {unresolved>0&&<button className="unidentified" onClick={()=>void markUnidentified()}>Manter como não identificado</button>}
       <button disabled={Boolean(unresolved)||recording.speakerReviewStatus==="confirmed"} onClick={()=>void confirm()}>{recording.speakerReviewStatus==="confirmed"?"Revisão confirmada":"Confirmar locutores"}</button>
     </div>
   </section>
