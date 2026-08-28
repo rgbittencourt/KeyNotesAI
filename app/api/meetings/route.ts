@@ -7,7 +7,8 @@ const cleanMeeting=(value:unknown)=>{const row=value&&typeof value==="object"?{.
 
 export async function GET(){
  try{const user=await requireAccess(),db=await getRawDb(),rows=user.role==="admin"?await db.prepare("SELECT id,email,data_json,audio_file_id,updated_at FROM meetings ORDER BY updated_at DESC").all<Record<string,unknown>>():await db.prepare("SELECT id,email,data_json,audio_file_id,updated_at FROM meetings WHERE email=? ORDER BY updated_at DESC").bind(user.email).all<Record<string,unknown>>();
-  return Response.json({meetings:rows.results.map(row=>{const ownerEmail=String(row.email);return{...JSON.parse(String(row.data_json)),id:Number(row.id),ownerEmail,url:row.audio_file_id?`/api/meetings/${encodeURIComponent(String(row.id))}/audio${user.role==="admin"?`?owner=${encodeURIComponent(ownerEmail)}`:""}`:"",cloudSynced:true}})});
+  const transferred=await db.prepare("SELECT meeting_id FROM meeting_transfers WHERE source_email=?").bind(user.email).all<{meeting_id:string}>();
+  return Response.json({meetings:rows.results.map(row=>{const ownerEmail=String(row.email);return{...JSON.parse(String(row.data_json)),id:Number(row.id),ownerEmail,url:row.audio_file_id?`/api/meetings/${encodeURIComponent(String(row.id))}/audio${user.role==="admin"?`?owner=${encodeURIComponent(ownerEmail)}`:""}`:"",cloudSynced:true}}),transferredMeetingIds:transferred.results.map(row=>Number(row.meeting_id))});
  }catch(error){return accessError(error)}
 }
 

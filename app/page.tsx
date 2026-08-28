@@ -836,11 +836,11 @@ export default function Home() {
     if(!session)return;
     let cancelled=false;
     void(async()=>{try{
-      const local=session.impersonatedBy?[]:await loadRecordings(),response=await fetch("/api/meetings"),body=await response.json() as{meetings?:DeviceRecording[]};
-      const cloud=response.ok?body.meetings||[]:[],cloudOwnIds=new Set(cloud.filter(row=>!row.ownerEmail||row.ownerEmail===session.email).map(row=>row.id)),localById=new Map(local.map(row=>[row.id,row]));
-      const merged=[...cloud.map(row=>{const localRecord=!row.ownerEmail||row.ownerEmail===session.email?localById.get(row.id):undefined;return localRecord?{...localRecord,...row,url:localRecord.url,audioBlob:localRecord.audioBlob,cloudSynced:true}:row}),...local.filter(row=>!cloudOwnIds.has(row.id))].sort((a,b)=>b.id-a.id);
+      const local=session.impersonatedBy?[]:await loadRecordings(),response=await fetch("/api/meetings"),body=await response.json() as{meetings?:DeviceRecording[];transferredMeetingIds?:number[]},transferredIds=new Set(body.transferredMeetingIds||[]),availableLocal=local.filter(row=>!transferredIds.has(row.id));
+      const cloud=response.ok?body.meetings||[]:[],cloudOwnIds=new Set(cloud.filter(row=>!row.ownerEmail||row.ownerEmail===session.email).map(row=>row.id)),localById=new Map(availableLocal.map(row=>[row.id,row]));
+      const merged=[...cloud.map(row=>{const localRecord=!row.ownerEmail||row.ownerEmail===session.email?localById.get(row.id):undefined;return localRecord?{...localRecord,...row,url:localRecord.url,audioBlob:localRecord.audioBlob,cloudSynced:true}:row}),...availableLocal.filter(row=>!cloudOwnIds.has(row.id))].sort((a,b)=>b.id-a.id);
       if(!cancelled)setDeviceRecordings(merged);
-      for(const record of local.filter(row=>!cloudOwnIds.has(row.id))){
+      for(const record of availableLocal.filter(row=>!cloudOwnIds.has(row.id))){
         try{const saved=await uploadMeetingToCloud(record,record.audioBlob!);if(!cancelled)setDeviceRecordings(rows=>rows.map(row=>row.id===record.id?{...saved,url:record.url,audioBlob:record.audioBlob}:row))}catch{}
       }
     }catch{if(!cancelled){if(session.impersonatedBy)setDeviceRecordings([]);else loadRecordings().then(setDeviceRecordings).catch(()=>{})}}})();
