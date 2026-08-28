@@ -12,6 +12,7 @@ export function audioExtension(blob:Blob){
  return"webm";
 }
 type RepairChunk={blob:Blob;offset:number};
+type KnownSpeaker={name:string;reference:string};
 function encodeWav(decoded:AudioBuffer,startFrame:number,endFrame:number,sampleRate=16000){
  const duration=(endFrame-startFrame)/decoded.sampleRate,frames=Math.max(1,Math.ceil(duration*sampleRate)),buffer=new ArrayBuffer(44+frames*2),view=new DataView(buffer),channels=Array.from({length:decoded.numberOfChannels},(_,index)=>decoded.getChannelData(index));
  const write=(offset:number,value:string)=>{for(let i=0;i<value.length;i++)view.setUint8(offset+i,value.charCodeAt(i))};
@@ -31,11 +32,28 @@ async function wavFallback(blob:Blob):Promise<RepairChunk[]>{
   return chunks;
  }finally{await context.close().catch(()=>{})}
 }
-async function requestTranscription(blob:Blob,options?:{diarize?:boolean;participants?:string}){
+async function speakerReferences(blob:Blob,segments:SpeakerSegment[]):Promise<KnownSpeaker[]>{
+ const context=new AudioContext();
+ try{
+  const decoded=await context.decodeAudioData(await blob.arrayBuffer()),seen=new Set<string>(),references:KnownSpeaker[]=[];
+  const candidates=[...segments].sort((a,b)=>(b.end-b.start)-(a.end-a.start));
+  for(const segment of candidates){
+   if(seen.has(segment.speaker)||references.length>=4)continue;
+   const start=Math.max(0,segment.start),end=Math.min(decoded.duration,start+Math.max(2,Math.min(10,segment.end-segment.start)));
+   if(end-start<2)continue;
+   const sample=encodeWav(decoded,Math.floor(start*decoded.sampleRate),Math.floor(end*decoded.sampleRate));
+   const bytes=new Uint8Array(await sample.arrayBuffer());let binary="";for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));
+   references.push({name:segment.speaker,reference:`data:audio/wav;base64,${btoa(binary)}`});seen.add(segment.speaker);
+  }
+  return references;
+ }finally{await context.close().catch(()=>{})}
+}
+async function requestTranscription(blob:Blob,options?:{diarize?:boolean;participants?:string;knownSpeakers?:KnownSpeaker[]}){
  const data=new FormData();
  data.set("audio",blob,`reuniao.${audioExtension(blob)}`);
  data.set("diarize",options?.diarize?"true":"false");
  if(options?.participants)data.set("participants",options.participants);
+ if(options?.knownSpeakers?.length)data.set("knownSpeakers",JSON.stringify(options.knownSpeakers));
  const response=await fetch("/api/transcribe-meeting",{method:"POST",body:data});
  const body=await response.json().catch(()=>({error:"O serviço retornou uma resposta inválida."})) as OpenAITranscription&{error?:string};
  if(!response.ok||!body.text){const error=new Error(body.error||"Não foi possível transcrever pela OpenAI.") as Error&{status?:number};error.status=response.status;throw error}
@@ -50,15 +68,17 @@ export async function transcribeAudioWithOpenAI(blob:Blob,options?:{diarize?:boo
  onProgress?.("Recuperando e dividindo a gravação",10);
  let repaired:RepairChunk[];
  try{repaired=await wavFallback(blob)}catch{throw new Error("A gravação está incompleta ou corrompida e não pôde ser recuperada. Grave novamente ou importe uma cópia em MP3, M4A ou WAV.")}
- const results:OpenAITranscription[]=[];
+ const results:OpenAITranscription[]= [];let references:KnownSpeaker[]=[];
  for(let index=0;index<repaired.length;index++){
   onProgress?.(`Transcrevendo parte ${index+1} de ${repaired.length} pela OpenAI`,15+Math.round(index/repaired.length*75));
-  results.push(await requestTranscription(repaired[index].blob,options));
+  results.push(await requestTranscription(repaired[index].blob,{...options,knownSpeakers:references}));
+  if(index===0&&repaired.length>1)references=await speakerReferences(repaired[0].blob,results[0].segments);
   onProgress?.(`Parte ${index+1} de ${repaired.length} concluída`,15+Math.round((index+1)/repaired.length*75));
  }
  if(results.length===1)return results[0];
  onProgress?.("Organizando locutores e horários",95);
- const segments=results.flatMap((result,index)=>result.segments.map(segment=>({...segment,speaker:`Parte ${index+1} · ${segment.speaker}`,start:segment.start+repaired[index].offset,end:segment.end+repaired[index].offset})));
- const speakerNames=Object.assign({},...results.map((result,index)=>Object.fromEntries(Object.entries(result.speakerNames).map(([speaker,name])=>[`Parte ${index+1} · ${speaker}`,name]))));
+ const known=new Set(results[0].segments.map(segment=>segment.speaker));
+ const segments=results.flatMap((result,index)=>result.segments.map(segment=>({...segment,speaker:index===0||known.has(segment.speaker)?segment.speaker:`Parte ${index+1} · ${segment.speaker}`,start:segment.start+repaired[index].offset,end:segment.end+repaired[index].offset})));
+ const speakerNames=Object.assign({},...results.map((result,index)=>Object.fromEntries(Object.entries(result.speakerNames).map(([speaker,name])=>[index===0||known.has(speaker)?speaker:`Parte ${index+1} · ${speaker}`,name]))));
  return{text:results.map(result=>result.text).join("\n\n"),segments,speakerNames};
 }

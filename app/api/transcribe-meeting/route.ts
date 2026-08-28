@@ -4,6 +4,9 @@ const MAX_AUDIO_BYTES=25*1024*1024;
 type Segment={speaker:string;start:number;end:number;text:string};
 const clean=(value:FormDataEntryValue|null)=>typeof value==="string"?value.trim():"";
 const normalize=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+function knownSpeakers(value:string){
+ try{return(JSON.parse(value)as unknown[]).filter((item):item is{name:string;reference:string}=>{const row=item as Record<string,unknown>;return typeof row?.name==="string"&&typeof row?.reference==="string"&&row.reference.startsWith("data:audio/")}).slice(0,4)}catch{return[]}
+}
 async function normalizeAudioFile(audio:File){
  const bytes=new Uint8Array(await audio.slice(0,16).arrayBuffer());
  const ascii=String.fromCharCode(...bytes);
@@ -45,7 +48,7 @@ export async function POST(request:Request){
   const user=await requireAccess();
   const key=process.env.OPENAI_API_KEY;
   if(!key)return Response.json({error:"A transcrição pela OpenAI ainda não foi conectada pelo administrador."},{status:503});
-  const data=await request.formData(),audio=data.get("audio"),diarize=clean(data.get("diarize"))==="true",participants=clean(data.get("participants"));
+  const data=await request.formData(),audio=data.get("audio"),diarize=clean(data.get("diarize"))==="true",participants=clean(data.get("participants")),references=knownSpeakers(clean(data.get("knownSpeakers")));
   if(!(audio instanceof File)||audio.size===0)return Response.json({error:"Envie um arquivo de áudio válido."},{status:400});
   if(audio.size>MAX_AUDIO_BYTES)return Response.json({error:"O áudio excede 25 MB. Use a transcrição híbrida ou divida a gravação."},{status:413});
   let normalizedAudio:File;
@@ -57,7 +60,10 @@ export async function POST(request:Request){
   upstream.set("model",diarize?"gpt-4o-transcribe-diarize":process.env.OPENAI_TRANSCRIPTION_MODEL||"gpt-4o-mini-transcribe");
   upstream.set("language","pt");
   upstream.set("response_format",diarize?"diarized_json":"json");
-  if(diarize)upstream.set("chunking_strategy","auto");
+  if(diarize){
+   upstream.set("chunking_strategy","auto");
+   for(const reference of references){upstream.append("known_speaker_names[]",reference.name);upstream.append("known_speaker_references[]",reference.reference)}
+  }
   const response=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{authorization:`Bearer ${key}`},body:upstream,signal:AbortSignal.timeout(600000)});
   const result=await response.json().catch(()=>null)as{error?:{code?:string;message?:string;type?:string};text?:unknown;segments?:unknown}|null;
   if(!response.ok){

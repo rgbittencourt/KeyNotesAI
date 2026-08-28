@@ -1077,15 +1077,11 @@ function SpeakerReview({recording,rename}:{recording:DeviceRecording;rename:(spe
   const audioRef=useRef<HTMLAudioElement|null>(null);
   const [playing,setPlaying]=useState("");
   const [stopAt,setStopAt]=useState(0);
-  const [activePart,setActivePart]=useState("");
   const speakers=useMemo(()=>{
     const grouped=new Map<string,SpeakerSegment[]>();
     for(const segment of recording.speakerSegments||[])grouped.set(segment.speaker,[...(grouped.get(segment.speaker)||[]),segment]);
     return[...grouped.entries()].map(([speaker,segments])=>({speaker,sample:[...segments].sort((a,b)=>Math.min(10,b.end-b.start)-Math.min(10,a.end-a.start))[0]}));
   },[recording.speakerSegments]);
-  const parts=useMemo(()=>[...new Set(speakers.map(({speaker})=>speaker.match(/^(?:Parte|Trecho) \d+/)?.[0]||"Gravação completa"))],[speakers]);
-  const selectedPart=parts.includes(activePart)?activePart:parts[0];
-  const visibleSpeakers=speakers.filter(({speaker})=>(speaker.match(/^(?:Parte|Trecho) \d+/)?.[0]||"Gravação completa")===selectedPart);
   async function playSample(speaker:string,sample:SpeakerSegment){
     const audio=audioRef.current;if(!audio)return;
     if(playing===speaker&&!audio.paused){audio.pause();setPlaying("");return}
@@ -1093,11 +1089,10 @@ function SpeakerReview({recording,rename}:{recording:DeviceRecording;rename:(spe
     try{await audio.play()}catch{setPlaying("")}
   }
   return <section className="speaker-review">
-    <div><strong>Identifique os locutores ouvindo a própria reunião</strong><small>O sistema separou {speakers.length} voz(es){parts.length>1?` em ${parts.length} partes do áudio`:""}. Em gravações divididas, escolha novamente o mesmo nome quando a pessoa reaparecer em outra parte.</small></div>
+    <div><strong>Identifique os locutores ouvindo a própria reunião</strong><small>O sistema encontrou {speakers.length} voz(es). Ouça uma amostra e identifique cada pessoa uma única vez.</small></div>
     <audio ref={audioRef} src={recording.url} preload="metadata" onTimeUpdate={event=>{if(stopAt&&event.currentTarget.currentTime>=stopAt){event.currentTarget.pause();setPlaying("")}}} onEnded={()=>setPlaying("")} />
-    {parts.length>1&&<nav className="speaker-parts" aria-label="Partes da gravação">{parts.map(part=><button key={part} className={part===selectedPart?"active":""} onClick={()=>setActivePart(part)}>{part}<small>{speakers.filter(item=>(item.speaker.match(/^(?:Parte|Trecho) \d+/)?.[0]||"Gravação completa")===part).length} voz(es)</small></button>)}</nav>}
     <div className="speaker-review-grid">
-      {visibleSpeakers.map(({speaker,sample},index)=><article key={speaker}>
+      {speakers.map(({speaker,sample},index)=><article key={speaker}>
         <button className={playing===speaker?"playing":""} onClick={()=>void playSample(speaker,sample)} aria-label={`Ouvir amostra do locutor ${index+1}`}>{playing===speaker?"Ⅱ":"▶"}</button>
         <div><span>{speakerLabel(speaker,{})}</span><small>{Math.floor(sample.start/60)}:{String(Math.floor(sample.start%60)).padStart(2,"0")} · “{sample.text.slice(0,110)}{sample.text.length>110?"…":""}”</small></div>
         <input list={`participants-${recording.id}`} value={recording.speakerNames?.[speaker]||""} placeholder={`Escreva o nome do locutor ${index+1}`} onChange={event=>void rename(speaker,event.currentTarget.value)}/>
