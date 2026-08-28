@@ -147,6 +147,7 @@ export default function RealFeatureView(p: Props) {
         (r.decisions || []).map((d, decisionIndex) => ({
           ...d,
           meeting: r.name,
+          meetingDate: r.meetingDate || r.createdAt,
           recordingId: r.id,
           decisionIndex,
         })),
@@ -1343,6 +1344,7 @@ function SmartAttendance({
 }
 type ManagedDecision = MeetingDecision & {
   meeting: string;
+  meetingDate: string;
   recordingId: number;
   decisionIndex: number;
 };
@@ -1502,6 +1504,7 @@ function DecisionBoard({
                         </div>
                       ) : (
                         <>
+                          <button className="decision-meeting-origin" onClick={()=>openMeeting(item.recordingId)} title="Abrir a reunião de origem"><span>REUNIÃO</span><strong>{item.meeting}</strong><small>{item.meetingDate}</small><b>→</b></button>
                           <strong>{item.text}</strong>
                           <div className="decision-meta">
                             <span>{item.person || "A confirmar"}</span>
