@@ -1,5 +1,6 @@
 export type SpeakerSegment={speaker:string;start:number;end:number;text:string};
 export type OpenAITranscription={text:string;segments:SpeakerSegment[];speakerNames:Record<string,string>};
+export type TranscriptionProgress=(message:string,percent:number)=>void;
 const MAX_UPLOAD_BYTES=25*1024*1024;
 export function audioExtension(blob:Blob){
  const type=blob.type.toLowerCase();
@@ -40,14 +41,24 @@ async function requestTranscription(blob:Blob,options?:{diarize?:boolean;partici
  if(!response.ok||!body.text){const error=new Error(body.error||"Não foi possível transcrever pela OpenAI.") as Error&{status?:number};error.status=response.status;throw error}
  return{ text:body.text,segments:body.segments||[],speakerNames:body.speakerNames||{} };
 }
-export async function transcribeAudioWithOpenAI(blob:Blob,options?:{diarize?:boolean;participants?:string}){
- if(blob.size<=MAX_UPLOAD_BYTES)try{return await requestTranscription(blob,options)}catch(error){const message=error instanceof Error?error.message:"";if(!/corrupt|unsupported|recusou o áudio/i.test(message))throw error}
+export async function transcribeAudioWithOpenAI(blob:Blob,options?:{diarize?:boolean;participants?:string},onProgress?:TranscriptionProgress){
+ onProgress?.("Preparando o áudio para envio",5);
+ if(blob.size<=MAX_UPLOAD_BYTES)try{
+  onProgress?.("Transcrevendo arquivo único pela OpenAI",15);
+  const result=await requestTranscription(blob,options);onProgress?.("Organizando a transcrição",95);return result;
+ }catch(error){const message=error instanceof Error?error.message:"";if(!/corrupt|unsupported|recusou o áudio/i.test(message))throw error}
+ onProgress?.("Recuperando e dividindo a gravação",10);
  let repaired:RepairChunk[];
  try{repaired=await wavFallback(blob)}catch{throw new Error("A gravação está incompleta ou corrompida e não pôde ser recuperada. Grave novamente ou importe uma cópia em MP3, M4A ou WAV.")}
  const results:OpenAITranscription[]=[];
- for(const chunk of repaired)results.push(await requestTranscription(chunk.blob,options));
+ for(let index=0;index<repaired.length;index++){
+  onProgress?.(`Transcrevendo parte ${index+1} de ${repaired.length} pela OpenAI`,15+Math.round(index/repaired.length*75));
+  results.push(await requestTranscription(repaired[index].blob,options));
+  onProgress?.(`Parte ${index+1} de ${repaired.length} concluída`,15+Math.round((index+1)/repaired.length*75));
+ }
  if(results.length===1)return results[0];
- const segments=results.flatMap((result,index)=>result.segments.map(segment=>({...segment,speaker:`Trecho ${index+1} · ${segment.speaker}`,start:segment.start+repaired[index].offset,end:segment.end+repaired[index].offset})));
- const speakerNames=Object.assign({},...results.map((result,index)=>Object.fromEntries(Object.entries(result.speakerNames).map(([speaker,name])=>[`Trecho ${index+1} · ${speaker}`,name]))));
+ onProgress?.("Organizando locutores e horários",95);
+ const segments=results.flatMap((result,index)=>result.segments.map(segment=>({...segment,speaker:`Parte ${index+1} · ${segment.speaker}`,start:segment.start+repaired[index].offset,end:segment.end+repaired[index].offset})));
+ const speakerNames=Object.assign({},...results.map((result,index)=>Object.fromEntries(Object.entries(result.speakerNames).map(([speaker,name])=>[`Parte ${index+1} · ${speaker}`,name]))));
  return{text:results.map(result=>result.text).join("\n\n"),segments,speakerNames};
 }
