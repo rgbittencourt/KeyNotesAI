@@ -6,8 +6,8 @@ const MAX_AUDIO_BYTES=100*1024*1024;
 const cleanMeeting=(value:unknown)=>{const row=value&&typeof value==="object"?{...(value as Record<string,unknown>)}:{};delete row.url;delete row.audioBlob;delete row.meetingPhotoBlob;row.attachments=Array.isArray(row.attachments)?row.attachments.map(item=>{const copy={...(item as Record<string,unknown>)};delete copy.blob;delete copy.url;return copy}):[];return row};
 
 export async function GET(){
- try{const user=await requireAccess(),rows=await(await getRawDb()).prepare("SELECT id,data_json,audio_file_id,updated_at FROM meetings WHERE email=? ORDER BY updated_at DESC").bind(user.email).all<Record<string,unknown>>();
-  return Response.json({meetings:rows.results.map(row=>({...JSON.parse(String(row.data_json)),id:Number(row.id),url:row.audio_file_id?`/api/meetings/${encodeURIComponent(String(row.id))}/audio`:"",cloudSynced:true}))});
+ try{const user=await requireAccess(),db=await getRawDb(),rows=user.role==="admin"?await db.prepare("SELECT id,email,data_json,audio_file_id,updated_at FROM meetings ORDER BY updated_at DESC").all<Record<string,unknown>>():await db.prepare("SELECT id,email,data_json,audio_file_id,updated_at FROM meetings WHERE email=? ORDER BY updated_at DESC").bind(user.email).all<Record<string,unknown>>();
+  return Response.json({meetings:rows.results.map(row=>{const ownerEmail=String(row.email);return{...JSON.parse(String(row.data_json)),id:Number(row.id),ownerEmail,url:row.audio_file_id?`/api/meetings/${encodeURIComponent(String(row.id))}/audio${user.role==="admin"?`?owner=${encodeURIComponent(ownerEmail)}`:""}`:"",cloudSynced:true}})});
  }catch(error){return accessError(error)}
 }
 
@@ -27,7 +27,8 @@ export async function POST(request:Request){
 
 export async function PUT(request:Request){
  try{const user=await requireAccess(),body=await request.json() as{meeting?:unknown},meeting=cleanMeeting(body.meeting),id=String(meeting.id||"");if(!id)return Response.json({error:"Reunião inválida."},{status:400});
-  const result=await(await getRawDb()).prepare("UPDATE meetings SET data_json=?,updated_at=? WHERE email=? AND id=?").bind(JSON.stringify(meeting),new Date().toISOString(),user.email,id).run();
+  const ownerEmail=user.role==="admin"&&typeof meeting.ownerEmail==="string"?meeting.ownerEmail.toLowerCase():user.email;
+  const result=await(await getRawDb()).prepare("UPDATE meetings SET data_json=?,updated_at=? WHERE email=? AND id=?").bind(JSON.stringify(meeting),new Date().toISOString(),ownerEmail,id).run();
   if(!result.meta.changes)return Response.json({error:"Reunião não encontrada para este usuário."},{status:404});return Response.json({ok:true});
  }catch(error){if(error instanceof Response)return accessError(error);return Response.json({error:"Não foi possível sincronizar a reunião."},{status:500})}
 }

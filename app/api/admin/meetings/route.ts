@@ -6,28 +6,29 @@ export const runtime = "edge";
 export async function DELETE(request: Request) {
   try {
     const admin = await requireAdmin();
-    const body = (await request.json()) as { meetingId?: number | string };
+    const body = (await request.json()) as { meetingId?: number | string;ownerEmail?:string };
     const meetingId = String(body.meetingId || "").trim();
     if (!meetingId)
       return Response.json({ error: "Reunião não informada." }, { status: 400 });
+    const ownerEmail=body.ownerEmail?.trim().toLowerCase()||admin.email;
 
     const db = await getRawDb();
     const rows = await db
       .prepare(
         "SELECT DISTINCT folder_id FROM drive_exports WHERE email=? AND local_meeting_id=?",
       )
-      .bind(admin.email, meetingId)
+      .bind(ownerEmail, meetingId)
       .all<{ folder_id: string }>();
     const folderIds = (rows.results || []).map((row) => row.folder_id);
-    const cloudMeeting=await db.prepare("SELECT data_json FROM meetings WHERE email=? AND id=?").bind(admin.email,meetingId).first<{data_json:string}>();
+    const cloudMeeting=await db.prepare("SELECT data_json FROM meetings WHERE email=? AND id=?").bind(ownerEmail,meetingId).first<{data_json:string}>();
     if(cloudMeeting?.data_json)try{const folderId=JSON.parse(cloudMeeting.data_json)?.driveFolderId;if(folderId&&!folderIds.includes(folderId))folderIds.push(folderId)}catch{}
 
     if (folderIds.length) await trashDriveFolders(folderIds);
     await db
       .prepare("DELETE FROM drive_exports WHERE email=? AND local_meeting_id=?")
-      .bind(admin.email, meetingId)
+      .bind(ownerEmail, meetingId)
       .run();
-    await db.prepare("DELETE FROM meetings WHERE email=? AND id=?").bind(admin.email,meetingId).run();
+    await db.prepare("DELETE FROM meetings WHERE email=? AND id=?").bind(ownerEmail,meetingId).run();
 
     return Response.json({ deleted: true, trashedFolders: folderIds.length });
   } catch (error) {

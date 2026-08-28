@@ -29,6 +29,7 @@ export type DeviceRecording = {
   url: string;
   audioBlob?: Blob;
   cloudSynced?: boolean;
+  ownerEmail?: string;
   audioMimeType?: string;
   meetingDate?: string;
   meetingTime?: string;
@@ -810,10 +811,10 @@ export default function Home() {
     let cancelled=false;
     void(async()=>{try{
       const local=await loadRecordings(),response=await fetch("/api/meetings"),body=await response.json() as{meetings?:DeviceRecording[]};
-      const cloud=response.ok?body.meetings||[]:[],cloudIds=new Set(cloud.map(row=>row.id)),localById=new Map(local.map(row=>[row.id,row]));
-      const merged=[...cloud.map(row=>{const localRecord=localById.get(row.id);return localRecord?{...localRecord,...row,url:localRecord.url,audioBlob:localRecord.audioBlob,cloudSynced:true}:row}),...local.filter(row=>!cloudIds.has(row.id))].sort((a,b)=>b.id-a.id);
+      const cloud=response.ok?body.meetings||[]:[],cloudOwnIds=new Set(cloud.filter(row=>!row.ownerEmail||row.ownerEmail===session.email).map(row=>row.id)),localById=new Map(local.map(row=>[row.id,row]));
+      const merged=[...cloud.map(row=>{const localRecord=!row.ownerEmail||row.ownerEmail===session.email?localById.get(row.id):undefined;return localRecord?{...localRecord,...row,url:localRecord.url,audioBlob:localRecord.audioBlob,cloudSynced:true}:row}),...local.filter(row=>!cloudOwnIds.has(row.id))].sort((a,b)=>b.id-a.id);
       if(!cancelled)setDeviceRecordings(merged);
-      for(const record of local.filter(row=>!cloudIds.has(row.id))){
+      for(const record of local.filter(row=>!cloudOwnIds.has(row.id))){
         try{const saved=await uploadMeetingToCloud(record,record.audioBlob!);if(!cancelled)setDeviceRecordings(rows=>rows.map(row=>row.id===record.id?{...saved,url:record.url,audioBlob:record.audioBlob}:row))}catch{}
       }
     }catch{if(!cancelled)loadRecordings().then(setDeviceRecordings).catch(()=>{})}})();
@@ -1037,7 +1038,7 @@ export default function Home() {
     const response = await fetch("/api/admin/meetings", {
       method: "DELETE",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ meetingId: id }),
+      body: JSON.stringify({ meetingId: id, ownerEmail: target.ownerEmail }),
     });
     const body = (await response.json().catch(() => ({}))) as {
       error?: string;

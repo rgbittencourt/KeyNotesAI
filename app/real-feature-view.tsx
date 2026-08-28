@@ -582,6 +582,7 @@ export default function RealFeatureView(p: Props) {
                     <small>
                       {r.createdAt} · {r.duration} · {r.size}
                     </small>
+                    {p.isAdmin&&r.ownerEmail&&<small className="meeting-owner">Proprietário: {r.ownerEmail}</small>}
                     <audio
                       controls
                       src={r.url}
@@ -623,6 +624,7 @@ export default function RealFeatureView(p: Props) {
               <div>
                 <p className="eyebrow">REUNIÃO SELECIONADA</p>
                 <h2>{selected?.name || "Nenhuma reunião"}</h2>
+                {p.isAdmin&&selected?.ownerEmail&&<small className="meeting-owner">Proprietário: {selected.ownerEmail}</small>}
               </div>
               {selected && (
                 <span className="processing-badge">
