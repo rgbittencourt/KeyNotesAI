@@ -71,6 +71,20 @@ async function upload(token: string, folderId: string, name: string, content: Bl
   });
 }
 
+export async function storeMeetingAudio(meeting:DriveMeeting,audio:File){
+  const token=await getDriveAccessToken(),folderName=`${folderDate(meeting.meetingDate||meeting.createdAt)} : ${folderTime(meeting.meetingTime)} - ${safeName(meeting.name)}`;
+  const existingFolderId=folderIdFromMeeting(meeting);
+  const folder=existingFolderId?{id:existingFolderId,name:folderName,mimeType:"application/vnd.google-apps.folder",webViewLink:`https://drive.google.com/drive/folders/${existingFolderId}`} : await createFolder(token,folderName,DRIVE_ROOT_FOLDER_ID);
+  const extension=audio.type.includes("mpeg")?"mp3":audio.type.includes("mp4")?"m4a":audio.type.includes("wav")?"wav":"webm";
+  const file=await upload(token,folder.id,`00 - Gravação - ${safeName(meeting.name)}.${extension}`,audio);
+  return{folder,file};
+}
+
+export async function readDriveFile(fileId:string,range?:string|null){
+  const token=await getDriveAccessToken();
+  return fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,{headers:{authorization:`Bearer ${token}`,...(range?{range}:{})}});
+}
+
 async function trashFile(token: string, fileId: string) {
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, {
     method: "PATCH",

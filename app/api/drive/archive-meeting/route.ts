@@ -21,6 +21,8 @@ export async function POST(request: Request) {
     const id = crypto.randomUUID(), createdAt = new Date().toISOString();
     await (await getRawDb()).prepare("INSERT INTO drive_exports(id,email,local_meeting_id,meeting_title,folder_id,folder_url,files_json,created_at) VALUES(?,?,?,?,?,?,?,?)")
       .bind(id, user.email, String(meeting.id), meeting.name.trim(), result.folder.id, result.folder.webViewLink, JSON.stringify(result.files), createdAt).run();
+    const audioFile=result.files.find(file=>file.name.startsWith("00 - Gravação"));
+    if(audioFile)await(await getRawDb()).prepare("UPDATE meetings SET audio_file_id=?,updated_at=? WHERE email=? AND id=?").bind(audioFile.id,createdAt,user.email,String(meeting.id)).run();
     return Response.json({ id, folder: result.folder, files: result.files, createdAt });
   } catch (error) {
     if (error instanceof SyntaxError) return Response.json({ error: "Os dados da reunião estão corrompidos." }, { status: 400 });

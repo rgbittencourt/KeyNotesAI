@@ -27,6 +27,8 @@ export type DeviceRecording = {
   duration: string;
   size: string;
   url: string;
+  audioBlob?: Blob;
+  cloudSynced?: boolean;
   audioMimeType?: string;
   meetingDate?: string;
   meetingTime?: string;
@@ -128,6 +130,7 @@ async function loadRecordings(): Promise<DeviceRecording[]> {
           .map((r) => ({
             ...r,
             url: URL.createObjectURL(r.blob),
+            audioBlob: r.blob,
             audioMimeType: r.audioMimeType || r.blob?.type,
             meetingPhotoUrl: r.meetingPhotoBlob
               ? URL.createObjectURL(r.meetingPhotoBlob)
@@ -142,6 +145,21 @@ async function loadRecordings(): Promise<DeviceRecording[]> {
       );
     req.onerror = () => reject(req.error);
   });
+}
+
+function cloudMeeting(record:DeviceRecording){
+  const copy={...record} as Record<string,unknown>;delete copy.url;delete copy.audioBlob;delete copy.meetingPhotoBlob;
+  copy.attachments=(record.attachments||[]).map(({blob:_blob,url:_url,...item})=>item);
+  return copy;
+}
+async function uploadMeetingToCloud(record:DeviceRecording,blob:Blob){
+  const form=new FormData();form.set("meeting",JSON.stringify(cloudMeeting(record)));form.set("audio",blob,`${record.name}.${record.audioMimeType?.includes("mp4")?"m4a":record.audioMimeType?.includes("mpeg")?"mp3":"webm"}`);
+  const response=await fetch("/api/meetings",{method:"POST",body:form}),body=await response.json() as{meeting?:DeviceRecording;error?:string};
+  if(!response.ok||!body.meeting)throw new Error(body.error||"Não foi possível sincronizar a reunião");return body.meeting;
+}
+async function saveMeetingToCloud(record:DeviceRecording){
+  const response=await fetch("/api/meetings",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({meeting:cloudMeeting(record)})});
+  if(!response.ok){const body=await response.json().catch(()=>({})) as{error?:string};throw new Error(body.error||"Não foi possível sincronizar a reunião")}
 }
 
 const meetings = [
@@ -788,11 +806,19 @@ export default function Home() {
     setHeaderPanel(null);
   }
   useEffect(() => {
-    loadRecordings()
-      .then(setDeviceRecordings)
-      .catch(() => {});
-    return () => deviceRecordings.forEach((r) => URL.revokeObjectURL(r.url));
-  }, []);
+    if(!session)return;
+    let cancelled=false;
+    void(async()=>{try{
+      const local=await loadRecordings(),response=await fetch("/api/meetings"),body=await response.json() as{meetings?:DeviceRecording[]};
+      const cloud=response.ok?body.meetings||[]:[],cloudIds=new Set(cloud.map(row=>row.id)),localById=new Map(local.map(row=>[row.id,row]));
+      const merged=[...cloud.map(row=>{const localRecord=localById.get(row.id);return localRecord?{...localRecord,...row,url:localRecord.url,audioBlob:localRecord.audioBlob,cloudSynced:true}:row}),...local.filter(row=>!cloudIds.has(row.id))].sort((a,b)=>b.id-a.id);
+      if(!cancelled)setDeviceRecordings(merged);
+      for(const record of local.filter(row=>!cloudIds.has(row.id))){
+        try{const saved=await uploadMeetingToCloud(record,record.audioBlob!);if(!cancelled)setDeviceRecordings(rows=>rows.map(row=>row.id===record.id?{...saved,url:record.url,audioBlob:record.audioBlob}:row))}catch{}
+      }
+    }catch{if(!cancelled)loadRecordings().then(setDeviceRecordings).catch(()=>{})}})();
+    return()=>{cancelled=true};
+  }, [session?.email]);
   useEffect(() => {
     try {
       setScheduledMeetings(
@@ -985,17 +1011,18 @@ export default function Home() {
       transcriptionMode: newMeetingTranscriptionMode,
     };
     await persistRecording({ ...base, blob: file });
-    setDeviceRecordings((r) => [
-      { ...base, url: URL.createObjectURL(file) },
-      ...r,
-    ]);
+    const local={...base,url:URL.createObjectURL(file),audioBlob:file} as DeviceRecording;
+    try{const saved=await uploadMeetingToCloud(local,file);setDeviceRecordings(r=>[{...saved,url:local.url,audioBlob:file},...r])}catch{setDeviceRecordings(r=>[local,...r]);notify("Áudio salvo neste aparelho; sincronização com a nuvem pendente")}
     setRecordingIssue("");
     setActive("Arquivos");
     notify("Áudio importado e salvo no aparelho");
   }
-  async function finalizePendingMeeting(){if(!pendingMeeting)return;const record={...pendingMeeting,participants:participantsRef.current.join("\n")};await persistRecording(record);setDeviceRecordings(rows=>[{...record,url:URL.createObjectURL(record.blob)},...rows]);setPendingMeeting(null);setPostMeetingName("");setActive("Arquivos");notify("Reunião, áudio e lista de presença salvos")}
+  async function finalizePendingMeeting(){if(!pendingMeeting)return;const record={...pendingMeeting,participants:participantsRef.current.join("\n")};await persistRecording(record);const local={...record,url:URL.createObjectURL(record.blob),audioBlob:record.blob} as DeviceRecording;try{const saved=await uploadMeetingToCloud(local,record.blob);setDeviceRecordings(rows=>[{...saved,url:local.url,audioBlob:record.blob},...rows]);notify("Reunião salva e disponível em qualquer computador")}catch{setDeviceRecordings(rows=>[local,...rows]);notify("Reunião salva neste aparelho; sincronização com a nuvem pendente")}setPendingMeeting(null);setPostMeetingName("");setActive("Arquivos")}
   async function updateRecording(id: number, patch: Partial<DeviceRecording>) {
-    await patchRecording(id, patch);
+    const current=deviceRecordings.find(row=>row.id===id);if(!current)return;
+    if(current.audioBlob)await patchRecording(id, patch);
+    const updated={...current,...patch};
+    try{await saveMeetingToCloud(updated)}catch{notify("Alteração salva neste aparelho; sincronização pendente")}
     setDeviceRecordings((rows) =>
       rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
     );

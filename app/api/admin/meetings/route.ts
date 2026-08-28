@@ -19,12 +19,15 @@ export async function DELETE(request: Request) {
       .bind(admin.email, meetingId)
       .all<{ folder_id: string }>();
     const folderIds = (rows.results || []).map((row) => row.folder_id);
+    const cloudMeeting=await db.prepare("SELECT data_json FROM meetings WHERE email=? AND id=?").bind(admin.email,meetingId).first<{data_json:string}>();
+    if(cloudMeeting?.data_json)try{const folderId=JSON.parse(cloudMeeting.data_json)?.driveFolderId;if(folderId&&!folderIds.includes(folderId))folderIds.push(folderId)}catch{}
 
     if (folderIds.length) await trashDriveFolders(folderIds);
     await db
       .prepare("DELETE FROM drive_exports WHERE email=? AND local_meeting_id=?")
       .bind(admin.email, meetingId)
       .run();
+    await db.prepare("DELETE FROM meetings WHERE email=? AND id=?").bind(admin.email,meetingId).run();
 
     return Response.json({ deleted: true, trashedFolders: folderIds.length });
   } catch (error) {

@@ -44,6 +44,12 @@ async function init() {
         d.prepare(
           "CREATE UNIQUE INDEX IF NOT EXISTS idx_trello_exports_meeting ON trello_exports(email,local_meeting_id)",
         ),
+        d.prepare(
+          "CREATE TABLE IF NOT EXISTS meetings (id TEXT NOT NULL, email TEXT NOT NULL, data_json TEXT NOT NULL, audio_file_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(email,id), FOREIGN KEY (email) REFERENCES app_users(email) ON DELETE CASCADE)",
+        ),
+        d.prepare(
+          "CREATE INDEX IF NOT EXISTS idx_meetings_email_updated ON meetings(email,updated_at DESC)",
+        ),
       ]);
     })();
   return initialized;

@@ -1,0 +1,1 @@
+CREATE INDEX `idx_meetings_email_updated` ON `meetings` (`email`,`updated_at`);
