@@ -836,23 +836,24 @@ export default function Home() {
     if(!session)return;
     let cancelled=false;
     void(async()=>{try{
-      const local=await loadRecordings(),response=await fetch("/api/meetings"),body=await response.json() as{meetings?:DeviceRecording[]};
+      const local=session.impersonatedBy?[]:await loadRecordings(),response=await fetch("/api/meetings"),body=await response.json() as{meetings?:DeviceRecording[]};
       const cloud=response.ok?body.meetings||[]:[],cloudOwnIds=new Set(cloud.filter(row=>!row.ownerEmail||row.ownerEmail===session.email).map(row=>row.id)),localById=new Map(local.map(row=>[row.id,row]));
       const merged=[...cloud.map(row=>{const localRecord=!row.ownerEmail||row.ownerEmail===session.email?localById.get(row.id):undefined;return localRecord?{...localRecord,...row,url:localRecord.url,audioBlob:localRecord.audioBlob,cloudSynced:true}:row}),...local.filter(row=>!cloudOwnIds.has(row.id))].sort((a,b)=>b.id-a.id);
       if(!cancelled)setDeviceRecordings(merged);
       for(const record of local.filter(row=>!cloudOwnIds.has(row.id))){
         try{const saved=await uploadMeetingToCloud(record,record.audioBlob!);if(!cancelled)setDeviceRecordings(rows=>rows.map(row=>row.id===record.id?{...saved,url:record.url,audioBlob:record.audioBlob}:row))}catch{}
       }
-    }catch{if(!cancelled)loadRecordings().then(setDeviceRecordings).catch(()=>{})}})();
+    }catch{if(!cancelled){if(session.impersonatedBy)setDeviceRecordings([]);else loadRecordings().then(setDeviceRecordings).catch(()=>{})}}})();
     return()=>{cancelled=true};
-  }, [session?.email]);
+  }, [session?.email,session?.impersonatedBy?.email]);
   useEffect(() => {
+    if(session?.impersonatedBy){setScheduledMeetings([]);return}
     try {
       setScheduledMeetings(
         JSON.parse(localStorage.getItem("keynotesai-meetings") || "[]"),
       );
     } catch {}
-  }, []);
+  }, [session?.impersonatedBy?.email]);
   useEffect(() => {
     if (!recording||recordingPaused) return;
     const timer = window.setInterval(
@@ -1039,6 +1040,7 @@ export default function Home() {
       size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
       audioMimeType: file.type,
       transcriptionMode: newMeetingTranscriptionMode,
+      ownerEmail:session?.email,
     };
     await persistRecording({ ...base, blob: file });
     const local={...base,url:URL.createObjectURL(file),audioBlob:file} as DeviceRecording;
@@ -1047,7 +1049,7 @@ export default function Home() {
     setActive("Arquivos");
     notify("Áudio importado e salvo no aparelho");
   }
-  async function finalizePendingMeeting(){if(!pendingMeeting)return;const record={...pendingMeeting,participants:participantsRef.current.join("\n"),voiceSamples:voiceSamplesRef.current};await persistRecording(record);const local={...record,url:URL.createObjectURL(record.blob),audioBlob:record.blob} as DeviceRecording;try{const saved=await uploadMeetingToCloud(local,record.blob);setDeviceRecordings(rows=>[{...saved,url:local.url,audioBlob:record.blob},...rows]);notify("Reunião salva e disponível em qualquer computador")}catch{setDeviceRecordings(rows=>[local,...rows]);notify("Reunião salva neste aparelho; sincronização com a nuvem pendente")}setPendingMeeting(null);setPostMeetingName("");setActive("Arquivos")}
+  async function finalizePendingMeeting(){if(!pendingMeeting)return;const record={...pendingMeeting,ownerEmail:session?.email,participants:participantsRef.current.join("\n"),voiceSamples:voiceSamplesRef.current};await persistRecording(record);const local={...record,url:URL.createObjectURL(record.blob),audioBlob:record.blob} as DeviceRecording;try{const saved=await uploadMeetingToCloud(local,record.blob);setDeviceRecordings(rows=>[{...saved,ownerEmail:session?.email,url:local.url,audioBlob:record.blob},...rows]);notify("Reunião salva e disponível em qualquer computador")}catch{setDeviceRecordings(rows=>[local,...rows]);notify("Reunião salva neste aparelho; sincronização com a nuvem pendente")}setPendingMeeting(null);setPostMeetingName("");setActive("Arquivos")}
   async function updateRecording(id: number, patch: Partial<DeviceRecording>) {
     const current=deviceRecordings.find(row=>row.id===id);if(!current)return;
     if(current.audioBlob)await patchRecording(id, patch);
