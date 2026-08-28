@@ -65,6 +65,11 @@ export default function AdminPanel({
     notify("Usuário excluído");
     await load();
   }
+  async function impersonate(user:User){
+    const response=await fetch("/api/admin/impersonation",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:user.email})}),body=await response.json()as{error?:string};
+    if(!response.ok)return notify(body.error||"Não foi possível visualizar como este usuário");
+    location.reload();
+  }
   return (
     <section className="feature-page">
       <div className="feature-title">
@@ -156,6 +161,7 @@ export default function AdminPanel({
                 {user.status === "active" ? "Ativo" : "Desativado"}
               </button>
               <div>
+                {user.role!=="admin"&&<button onClick={()=>void impersonate(user)}>Visualizar como</button>}
                 <button
                   onClick={() =>
                     update(user, { monthlyLimit: user.monthlyLimit })

@@ -12,7 +12,7 @@ export function audioExtension(blob:Blob){
  return"webm";
 }
 type RepairChunk={blob:Blob;offset:number};
-type KnownSpeaker={name:string;reference:string};
+export type KnownSpeaker={name:string;reference:string};
 function encodeWav(decoded:AudioBuffer,startFrame:number,endFrame:number,sampleRate=16000){
  const duration=(endFrame-startFrame)/decoded.sampleRate,frames=Math.max(1,Math.ceil(duration*sampleRate)),buffer=new ArrayBuffer(44+frames*2),view=new DataView(buffer),channels=Array.from({length:decoded.numberOfChannels},(_,index)=>decoded.getChannelData(index));
  const write=(offset:number,value:string)=>{for(let i=0;i<value.length;i++)view.setUint8(offset+i,value.charCodeAt(i))};
@@ -59,11 +59,37 @@ async function requestTranscription(blob:Blob,options?:{diarize?:boolean;partici
  if(!response.ok||!body.text){const error=new Error(body.error||"Não foi possível transcrever pela OpenAI.") as Error&{status?:number};error.status=response.status;throw error}
  return{ text:body.text,segments:body.segments||[],speakerNames:body.speakerNames||{} };
 }
-export async function transcribeAudioWithOpenAI(blob:Blob,options?:{diarize?:boolean;participants?:string},onProgress?:TranscriptionProgress){
+const normalized=(value:string)=>value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase().trim();
+function overlap(a:SpeakerSegment,b:SpeakerSegment){return Math.max(0,Math.min(a.end,b.end)-Math.max(a.start,b.start))}
+function consolidatePasses(passes:Array<{result:OpenAITranscription;known:KnownSpeaker[]}>){
+ const baseline=passes[0].result,segments=baseline.segments.map(segment=>({...segment})),speakerNames={...baseline.speakerNames};
+ for(const segment of segments){
+  let bestName="",bestOverlap=0;
+  for(const pass of passes)for(const candidate of pass.result.segments){
+   const label=pass.result.speakerNames[candidate.speaker]?.trim()||candidate.speaker.trim(),known=pass.known.find(item=>normalized(item.name)===normalized(label));
+   const shared=known?overlap(segment,candidate):0;
+   if(shared>bestOverlap){bestOverlap=shared;bestName=known!.name}
+  }
+  if(bestName&&bestOverlap>=Math.min(0.5,Math.max(.15,(segment.end-segment.start)*.25))){segment.speaker=`participante:${bestName}`;speakerNames[segment.speaker]=bestName}
+ }
+ return{text:segments.map(segment=>segment.text).join(" "),segments,speakerNames};
+}
+async function transcribeChunk(blob:Blob,options:{diarize?:boolean;participants?:string;knownSpeakers?:KnownSpeaker[]},onProgress?:TranscriptionProgress,baseProgress=15,span=75){
+ const references=options.knownSpeakers||[];
+ if(!options.diarize||references.length<=4)return requestTranscription(blob,options);
+ const groups:Array<KnownSpeaker[]>=[];for(let index=0;index<references.length;index+=4)groups.push(references.slice(index,index+4));
+ const passes:Array<{result:OpenAITranscription;known:KnownSpeaker[]}>=[];
+ for(let index=0;index<groups.length;index++){
+  onProgress?.(`Identificando grupo ${index+1} de ${groups.length} (${groups[index].map(row=>row.name).join(", ")})`,baseProgress+Math.round(index/groups.length*span));
+  passes.push({result:await requestTranscription(blob,{...options,knownSpeakers:groups[index]}),known:groups[index]});
+ }
+ return consolidatePasses(passes);
+}
+export async function transcribeAudioWithOpenAI(blob:Blob,options?:{diarize?:boolean;participants?:string;knownSpeakers?:KnownSpeaker[]},onProgress?:TranscriptionProgress){
  onProgress?.("Preparando o áudio para envio",5);
  if(blob.size<=MAX_UPLOAD_BYTES)try{
   onProgress?.("Transcrevendo arquivo único pela OpenAI",15);
-  const result=await requestTranscription(blob,options);onProgress?.("Organizando a transcrição",95);return result;
+  const result=await transcribeChunk(blob,options||{},onProgress,15,75);onProgress?.("Consolidando as falas por participante",95);return result;
  }catch(error){const message=error instanceof Error?error.message:"";if(!/corrupt|unsupported|recusou o áudio/i.test(message))throw error}
  onProgress?.("Recuperando e dividindo a gravação",10);
  let repaired:RepairChunk[];
@@ -71,7 +97,8 @@ export async function transcribeAudioWithOpenAI(blob:Blob,options?:{diarize?:boo
  const results:OpenAITranscription[]= [];let references:KnownSpeaker[]=[];
  for(let index=0;index<repaired.length;index++){
   onProgress?.(`Transcrevendo parte ${index+1} de ${repaired.length} pela OpenAI`,15+Math.round(index/repaired.length*75));
-  results.push(await requestTranscription(repaired[index].blob,{...options,knownSpeakers:references}));
+  const enrolled=options?.knownSpeakers||references;
+  results.push(await transcribeChunk(repaired[index].blob,{...options,knownSpeakers:enrolled},onProgress,15+Math.round(index/repaired.length*75),Math.max(5,Math.round(75/repaired.length))));
   if(index===0&&repaired.length>1)references=await speakerReferences(repaired[0].blob,results[0].segments);
   onProgress?.(`Parte ${index+1} de ${repaired.length} concluída`,15+Math.round((index+1)/repaired.length*75));
  }

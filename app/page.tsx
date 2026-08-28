@@ -11,6 +11,7 @@ type SessionUser = {
   role: "admin" | "user";
   monthlyLimit: number;
   used: number;
+  impersonatedBy?: { email: string; name: string };
 };
 type DriveStatus = {
   connected: boolean;
@@ -56,6 +57,8 @@ export type DeviceRecording = {
     text: string;
   }>;
   speakerNames?: Record<string, string>;
+  voiceSamples?: Array<{ name: string; reference: string }>;
+  speakerReviewStatus?: "pending" | "confirmed";
   recordingSource?: "microphone" | "google-meet" | "google-meet-microphone";
   driveFolderUrl?: string;
   driveFolderId?: string;
@@ -709,6 +712,7 @@ export default function Home() {
   const pausedAtRef=useRef(0);
   const pausedDurationRef=useRef(0);
   const participantsRef = useRef<string[]>([]);
+  const voiceSamplesRef = useRef<Array<{ name: string; reference: string }>>([]);
   const audioImportRef = useRef<HTMLInputElement | null>(null);
   const [recordingIssue, setRecordingIssue] = useState("");
   const [toast, setToast] = useState("");
@@ -730,6 +734,7 @@ export default function Home() {
     "microphone" | "google-meet" | "google-meet-microphone"
   >("google-meet-microphone");
   const [liveParticipants, setLiveParticipants] = useState<string[]>([]);
+  const [liveVoiceSampleNames,setLiveVoiceSampleNames]=useState<string[]>([]);
   const [listeningParticipant, setListeningParticipant] = useState(false);
   const[pendingMeeting,setPendingMeeting]=useState<(Omit<DeviceRecording,"url">&{blob:Blob})|null>(null);
   const[postMeetingName,setPostMeetingName]=useState("");
@@ -756,7 +761,7 @@ export default function Home() {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
   }
-  function registerParticipant(name: string) {
+  function registerParticipant(name: string, reference?: string) {
     const clean = name
       .replace(/^(meu nome [eé]|eu sou|sou o|sou a)\s+/i, "")
       .replace(/\s+(e estou presente|presente)$/i, "")
@@ -766,10 +771,14 @@ export default function Home() {
     if (!next.some((x) => x.toLocaleLowerCase() === clean.toLocaleLowerCase()))
       next.push(clean);
     participantsRef.current = next;
+    if(reference){
+      voiceSamplesRef.current=[...voiceSamplesRef.current.filter(sample=>sample.name.toLocaleLowerCase()!==clean.toLocaleLowerCase()),{name:clean,reference}];
+      setLiveVoiceSampleNames(voiceSamplesRef.current.map(sample=>sample.name));
+    }
     setLiveParticipants(next);
-    notify(`${clean} registrado(a) na presença`);
+    notify(`${clean} registrado(a)${reference?" com amostra de voz":""}`);
   }
-  function captureParticipant() {
+  async function captureParticipant(forcedName?: string) {
     const SpeechRecognition =
       (
         window as unknown as {
@@ -779,21 +788,38 @@ export default function Home() {
       ).SpeechRecognition ||
       (window as unknown as { webkitSpeechRecognition?: new () => any })
         .webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    if (!SpeechRecognition && !forcedName) {
       notify("Reconhecimento de nomes indisponível; digite o nome manualmente");
       return;
     }
-    const recognition = new SpeechRecognition();
-    recognition.lang = "pt-BR";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    const recognition = SpeechRecognition&&!forcedName?new SpeechRecognition():null;
+    if(recognition){recognition.lang = "pt-BR";recognition.interimResults = false;recognition.maxAlternatives = 1}
     setListeningParticipant(true);
-    recognition.onresult = (event: any) =>
-      registerParticipant(event.results[0][0].transcript);
-    recognition.onerror = () =>
+    let recognizedName=forcedName||"",sampleRecorder:MediaRecorder|null=null;const sampleChunks:Blob[]=[];
+    const source=streamRef.current;
+    if(source?.getAudioTracks().length&&typeof MediaRecorder!=="undefined"){
+      const sampleStream=new MediaStream(source.getAudioTracks().map(track=>track.clone()));
+      const mime=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(type=>MediaRecorder.isTypeSupported(type));
+      sampleRecorder=new MediaRecorder(sampleStream,{audioBitsPerSecond:24000,...(mime?{mimeType:mime}:{})});
+      sampleRecorder.ondataavailable=event=>{if(event.data.size)sampleChunks.push(event.data)};
+      sampleRecorder.onstop=()=>{void(async()=>{
+        sampleStream.getTracks().forEach(track=>track.stop());
+        if(!recognizedName||!sampleChunks.length){setListeningParticipant(false);return}
+        const sample=new Blob(sampleChunks,{type:sampleRecorder?.mimeType||"audio/webm"}),bytes=new Uint8Array(await sample.arrayBuffer());let binary="";
+        for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));
+        registerParticipant(recognizedName,`data:${sample.type};base64,${btoa(binary)}`);setListeningParticipant(false);
+      })()};
+      sampleRecorder.start();window.setTimeout(()=>{if(sampleRecorder?.state==="recording")sampleRecorder.stop()},5000);
+    }
+    if(recognition)recognition.onresult = (event: any) => {
+      recognizedName=event.results[0][0].transcript;
+      if(!sampleRecorder)registerParticipant(recognizedName);
+    };
+    if(recognition)recognition.onerror = () =>
       notify("Não entendi o nome. Tente novamente ou digite manualmente");
-    recognition.onend = () => setListeningParticipant(false);
-    recognition.start();
+    if(recognition)recognition.onend = () => {if(!sampleRecorder)setListeningParticipant(false)};
+    if(recognition)recognition.start();
+    else if(!sampleRecorder){registerParticipant(recognizedName);setListeningParticipant(false)}
   }
   function runSearch() {
     const q = searchTerm.toLowerCase();
@@ -925,7 +951,9 @@ export default function Home() {
         transcriptionMode = newMeetingTranscriptionMode;
       chunksRef.current = [];
       participantsRef.current = [];
+      voiceSamplesRef.current = [];
       setLiveParticipants([]);
+      setLiveVoiceSampleNames([]);
       startedAtRef.current = Date.now();
       pausedAtRef.current=0;pausedDurationRef.current=0;
       setRecordingSeconds(0);
@@ -949,6 +977,7 @@ export default function Home() {
             minute: "2-digit",
           }),
           participants: participantsRef.current.join("\n"),
+          voiceSamples: voiceSamplesRef.current,
           duration: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
           size: `${(blob.size / 1024 / 1024).toFixed(1)} MB`,
           audioMimeType: blob.type,
@@ -1018,7 +1047,7 @@ export default function Home() {
     setActive("Arquivos");
     notify("Áudio importado e salvo no aparelho");
   }
-  async function finalizePendingMeeting(){if(!pendingMeeting)return;const record={...pendingMeeting,participants:participantsRef.current.join("\n")};await persistRecording(record);const local={...record,url:URL.createObjectURL(record.blob),audioBlob:record.blob} as DeviceRecording;try{const saved=await uploadMeetingToCloud(local,record.blob);setDeviceRecordings(rows=>[{...saved,url:local.url,audioBlob:record.blob},...rows]);notify("Reunião salva e disponível em qualquer computador")}catch{setDeviceRecordings(rows=>[local,...rows]);notify("Reunião salva neste aparelho; sincronização com a nuvem pendente")}setPendingMeeting(null);setPostMeetingName("");setActive("Arquivos")}
+  async function finalizePendingMeeting(){if(!pendingMeeting)return;const record={...pendingMeeting,participants:participantsRef.current.join("\n"),voiceSamples:voiceSamplesRef.current};await persistRecording(record);const local={...record,url:URL.createObjectURL(record.blob),audioBlob:record.blob} as DeviceRecording;try{const saved=await uploadMeetingToCloud(local,record.blob);setDeviceRecordings(rows=>[{...saved,url:local.url,audioBlob:record.blob},...rows]);notify("Reunião salva e disponível em qualquer computador")}catch{setDeviceRecordings(rows=>[local,...rows]);notify("Reunião salva neste aparelho; sincronização com a nuvem pendente")}setPendingMeeting(null);setPostMeetingName("");setActive("Arquivos")}
   async function updateRecording(id: number, patch: Partial<DeviceRecording>) {
     const current=deviceRecordings.find(row=>row.id===id);if(!current)return;
     if(current.audioBlob)await patchRecording(id, patch);
@@ -1206,7 +1235,8 @@ export default function Home() {
       </main>
     );
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${session.impersonatedBy?"impersonating":""}`}>
+      {session.impersonatedBy&&<div className="impersonation-banner" role="status"><span>Você está acessando como <strong>{session.name}</strong> · {session.email}</span><button onClick={async()=>{const response=await fetch("/api/admin/impersonation",{method:"DELETE"});if(response.ok)location.reload();else notify("Não foi possível voltar ao administrador")}}>Voltar ao administrador</button></div>}
       <aside className="sidebar">
         <div className="brand">
           <button
@@ -1430,6 +1460,7 @@ export default function Home() {
               updateRecording={updateRecording}
               deleteRecording={deleteRecording}
               liveParticipants={liveParticipants}
+              liveVoiceSampleNames={liveVoiceSampleNames}
               listeningParticipant={listeningParticipant}
               captureParticipant={captureParticipant}
               registerParticipant={registerParticipant}
@@ -1835,7 +1866,7 @@ export default function Home() {
             <p className="eyebrow">GRAVAÇÃO ENCERRADA</p>
             <h2 id="finalize-title">Confirme a presença</h2>
             <p>Você pode registrar nomes por voz agora, completar manualmente e salvar quando terminar.</p>
-            <button className={`voice-attendance ${listeningParticipant ? "listening" : ""}`} onClick={captureParticipant}>
+            <button className={`voice-attendance ${listeningParticipant ? "listening" : ""}`} onClick={()=>void captureParticipant()}>
               {listeningParticipant ? "Ouvindo o nome…" : "◉ Registrar uma pessoa por voz"}
             </button>
             <div className="finalize-manual">
@@ -1844,7 +1875,7 @@ export default function Home() {
             </div>
             <div className="finalize-presence-list">
               <strong>{liveParticipants.length} participante(s)</strong>
-              {liveParticipants.length ? <ul>{liveParticipants.map(name=><li key={name}>✓ {name}</li>)}</ul> : <p>Nenhum nome registrado. Você ainda pode salvar e preencher depois nos dados da reunião.</p>}
+              {liveParticipants.length ? <ul>{liveParticipants.map(name=><li key={name}>✓ {name}{liveVoiceSampleNames.some(sample=>sample.toLocaleLowerCase()===name.toLocaleLowerCase())?" · voz cadastrada":" · sem amostra"}</li>)}</ul> : <p>Nenhum nome registrado. Você ainda pode salvar e preencher depois nos dados da reunião.</p>}
             </div>
             <button className="finalize-save" onClick={()=>void finalizePendingMeeting()}>Salvar reunião e abrir os arquivos</button>
           </section>

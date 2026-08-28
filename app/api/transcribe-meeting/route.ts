@@ -82,6 +82,10 @@ export async function POST(request:Request){
    return{speaker:String(row.speaker||"Locutor"),start:Number(row.start)||0,end:Number(row.end)||0,text:String(row.text||"").trim()};
   }).filter(item=>item.text):[];
   const speakerNames=associateSpeakers(segments,participants);
+  for(const segment of segments){
+   const enrolled=references.find(reference=>normalize(reference.name)===normalize(segment.speaker));
+   if(enrolled)speakerNames[segment.speaker]=enrolled.name;
+  }
   return Response.json({text:result.text.trim(),segments,speakerNames});
  }catch(error){
   if(reservedEmail)await refundUsage(reservedEmail);

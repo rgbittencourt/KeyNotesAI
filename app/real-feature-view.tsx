@@ -26,8 +26,9 @@ type Props = {
   ) => Promise<void>;
   deleteRecording: (id: number) => Promise<void>;
   liveParticipants: string[];
+  liveVoiceSampleNames: string[];
   listeningParticipant: boolean;
-  captureParticipant: () => void;
+  captureParticipant: (name?:string) => void | Promise<void>;
   registerParticipant: (name: string) => void;
   navigate: (active: string) => void;
 };
@@ -150,6 +151,10 @@ export default function RealFeatureView(p: Props) {
       p.notify("Digite ou cole a transcrição primeiro");
       return;
     }
+    if(selected.transcriptionMode==="diarized"&&selected.speakerSegments?.length&&selected.speakerReviewStatus!=="confirmed"){
+      p.notify("Confirme todos os locutores antes de gerar os documentos");
+      return;
+    }
     setAnalyzing(true);
     setAnalysisIssue("");
     try {
@@ -181,7 +186,7 @@ export default function RealFeatureView(p: Props) {
       const blob = await fetch(selected.url).then((r) => r.blob());
       setTranscriptionStatus("A OpenAI está transcrevendo a reunião…");
       const diarize=selected.transcriptionMode!=="openai";
-      const result = await transcribeAudioWithOpenAI(blob,{diarize,participants:selected.participants},(status,progress)=>{
+      const result = await transcribeAudioWithOpenAI(blob,{diarize,participants:selected.participants,knownSpeakers:selected.voiceSamples},(status,progress)=>{
         setTranscriptionStatus(status);setTranscriptionProgress(progress);
       });
       const text=diarize&&result.segments.length?speakerTranscript(result.segments,result.speakerNames):result.text;
@@ -191,6 +196,7 @@ export default function RealFeatureView(p: Props) {
         transcriptionMode: diarize?"diarized":"openai",
         speakerSegments: result.segments,
         speakerNames: result.speakerNames,
+        speakerReviewStatus: diarize?"pending":undefined,
       });
       setTranscriptionProgress(100);
       setTranscriptionStatus("Transcrição concluída pela OpenAI");
@@ -211,7 +217,14 @@ export default function RealFeatureView(p: Props) {
     const speakerNames={...(selected.speakerNames||{}),[speaker]:name};
     const transcript=speakerTranscript(selected.speakerSegments,speakerNames);
     setDraft(transcript);
-    await p.updateRecording(selected.id,{speakerNames,transcript});
+    await p.updateRecording(selected.id,{speakerNames,transcript,speakerReviewStatus:"pending"});
+  }
+  async function confirmSpeakers(){
+    if(!selected?.speakerSegments?.length)return;
+    const unresolved=[...new Set(selected.speakerSegments.map(segment=>segment.speaker))].filter(speaker=>!selected.speakerNames?.[speaker]?.trim());
+    if(unresolved.length){p.notify(`Ainda há ${unresolved.length} voz(es) sem identificação`);return}
+    await p.updateRecording(selected.id,{speakerReviewStatus:"confirmed",transcript:draft});
+    p.notify("Locutores confirmados. A geração de documentos foi liberada");
   }
   async function archiveInDrive() {
     if (!selected || archivingDrive) return;
@@ -526,6 +539,7 @@ export default function RealFeatureView(p: Props) {
               </article>
               <SmartAttendance
                 participants={p.liveParticipants}
+                voiceSampleNames={p.liveVoiceSampleNames}
                 listening={p.listeningParticipant}
                 capture={p.captureParticipant}
                 register={p.registerParticipant}
@@ -772,7 +786,7 @@ export default function RealFeatureView(p: Props) {
                     </div>
                   )}
                 </div>
-                {selected.speakerSegments?.length ? <SpeakerReview recording={selected} rename={renameSpeaker}/>:null}
+                {selected.speakerSegments?.length ? <SpeakerReview recording={selected} rename={renameSpeaker} confirm={confirmSpeakers}/>:null}
                 <label className="transcript-editor">
                   <strong>Transcrição da reunião</strong>
                   <small>
@@ -812,7 +826,7 @@ export default function RealFeatureView(p: Props) {
                   <button
                     className="primary-btn"
                     onClick={process}
-                    disabled={analyzing}
+                    disabled={analyzing||(selected.transcriptionMode==="diarized"&&Boolean(selected.speakerSegments?.length)&&selected.speakerReviewStatus!=="confirmed")}
                   >
                     {analyzing
                       ? "Analisando reunião…"
@@ -1075,7 +1089,7 @@ export default function RealFeatureView(p: Props) {
     </section>
   );
 }
-function SpeakerReview({recording,rename}:{recording:DeviceRecording;rename:(speaker:string,name:string)=>Promise<void>}){
+function SpeakerReview({recording,rename,confirm}:{recording:DeviceRecording;rename:(speaker:string,name:string)=>Promise<void>;confirm:()=>Promise<void>}){
   const audioRef=useRef<HTMLAudioElement|null>(null);
   const [playing,setPlaying]=useState("");
   const [stopAt,setStopAt]=useState(0);
@@ -1084,6 +1098,7 @@ function SpeakerReview({recording,rename}:{recording:DeviceRecording;rename:(spe
     for(const segment of recording.speakerSegments||[])grouped.set(segment.speaker,[...(grouped.get(segment.speaker)||[]),segment]);
     return[...grouped.entries()].map(([speaker,segments])=>({speaker,sample:[...segments].sort((a,b)=>Math.min(10,b.end-b.start)-Math.min(10,a.end-a.start))[0]}));
   },[recording.speakerSegments]);
+  const unresolved=speakers.filter(({speaker})=>!recording.speakerNames?.[speaker]?.trim()).length;
   async function playSample(speaker:string,sample:SpeakerSegment){
     const audio=audioRef.current;if(!audio)return;
     if(playing===speaker&&!audio.paused){audio.pause();setPlaying("");return}
@@ -1101,6 +1116,10 @@ function SpeakerReview({recording,rename}:{recording:DeviceRecording;rename:(spe
       </article>)}
     </div>
     <datalist id={`participants-${recording.id}`}>{(recording.participants||"").split(/[\n,;]+/).map(name=>name.trim()).filter(Boolean).map(name=><option value={name} key={name}/>)}</datalist>
+    <div className={`speaker-review-confirm ${unresolved?"pending":"ready"}`}>
+      <span>{unresolved?`${unresolved} voz(es) ainda não identificada(s)`:recording.speakerReviewStatus==="confirmed"?"✓ Identificação revisada e confirmada":"Todas as vozes possuem um nome"}</span>
+      <button disabled={Boolean(unresolved)||recording.speakerReviewStatus==="confirmed"} onClick={()=>void confirm()}>{recording.speakerReviewStatus==="confirmed"?"Revisão confirmada":"Confirmar locutores"}</button>
+    </div>
   </section>
 }
 function MeetingResources({recording,update,notify}:{recording:DeviceRecording;update:Props["updateRecording"];notify:Props["notify"]}) {
@@ -1234,13 +1253,15 @@ function MeetingMetadata({
 }
 function SmartAttendance({
   participants,
+  voiceSampleNames,
   listening,
   capture,
   register,
 }: {
   participants: string[];
+  voiceSampleNames: string[];
   listening: boolean;
-  capture: () => void;
+  capture: (name?:string) => void | Promise<void>;
   register: (name: string) => void;
 }) {
   const [name, setName] = useState("");
@@ -1254,7 +1275,7 @@ function SmartAttendance({
       </p>
       <button
         className={listening ? "listening" : ""}
-        onClick={capture}
+        onClick={()=>void capture()}
         disabled={listening}
       >
         <span>◉</span>
@@ -1282,21 +1303,26 @@ function SmartAttendance({
         >
           Adicionar
         </button>
+        <button
+          className="record-voice"
+          disabled={!name.trim()||listening}
+          onClick={()=>{if(name.trim()){void capture(name);setName("")}}}
+          title="Gravar cinco segundos da voz e vincular ao nome"
+        >
+          Gravar voz
+        </button>
       </div>
       <div className="attendance-list">
         <small>{participants.length} PRESENTE(S)</small>
         {participants.length === 0 ? (
           <p>Nenhuma presença registrada.</p>
         ) : (
-          participants.map((person, i) => (
+          participants.map((person) => (
             <div key={person}>
               <span>✓</span>
               <strong>{person}</strong>
               <time>
-                {new Date().toLocaleTimeString("pt-BR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+                {voiceSampleNames.some(name=>name.toLocaleLowerCase()===person.toLocaleLowerCase())?"VOZ ✓":new Date().toLocaleTimeString("pt-BR", {hour:"2-digit",minute:"2-digit"})}
               </time>
             </div>
           ))
