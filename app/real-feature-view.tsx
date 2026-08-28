@@ -3,10 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type MeetingAction, type MeetingDecision } from "./local-processing";
 import { analyzeTranscriptSemantically } from "./semantic-processing";
 import {
-  transcribeAudioInChunks,
-  type TranscriptionQuality,
-} from "./chunked-transcription";
-import {
   audioExtension,
   transcribeAudioWithOpenAI,
   type SpeakerSegment,
@@ -74,9 +70,7 @@ export default function RealFeatureView(p: Props) {
     [transcriptionStatus, setTranscriptionStatus] = useState(""),
     [transcriptionProgress, setTranscriptionProgress] = useState(0),
     [transcriptionStartedAt, setTranscriptionStartedAt] = useState(0),
-    [transcriptionElapsed, setTranscriptionElapsed] = useState(0),
-    [transcriptionQuality, setTranscriptionQuality] =
-      useState<TranscriptionQuality>("accurate");
+    [transcriptionElapsed, setTranscriptionElapsed] = useState(0);
   const selected = p.recordings.find(
     (r) => r.id === (selectedId ?? p.recordings[0]?.id),
   );
@@ -177,38 +171,6 @@ export default function RealFeatureView(p: Props) {
       setAnalyzing(false);
     }
   }
-  async function transcribeLocally() {
-    if (!selected || transcribing) return;
-    setTranscribing(true);
-    setTranscriptionStartedAt(Date.now());setTranscriptionElapsed(0);
-    setTranscriptionProgress(0);
-    setTranscriptionStatus("Preparando o áudio em partes…");
-    try {
-      const blob = await fetch(selected.url).then((r) => r.blob());
-      const text = await transcribeAudioInChunks(
-        blob,
-        (message, percent) => {
-          setTranscriptionStatus(message);
-          setTranscriptionProgress(percent);
-        },
-        transcriptionQuality,
-      );
-      setDraft(text);
-      await p.updateRecording(selected.id, { transcript: text });
-      setTranscriptionProgress(100);
-      setTranscriptionStatus("Transcrição concluída");
-      p.notify("Áudio transcrito em partes neste aparelho");
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Não foi possível transcrever este áudio";
-      setTranscriptionStatus(message);
-      p.notify("Falha na transcrição local");
-    } finally {
-      setTranscribing(false);
-    }
-  }
   async function transcribeWithOpenAI() {
     if (!selected || transcribing) return;
     setTranscribing(true);
@@ -218,7 +180,7 @@ export default function RealFeatureView(p: Props) {
     try {
       const blob = await fetch(selected.url).then((r) => r.blob());
       setTranscriptionStatus("A OpenAI está transcrevendo a reunião…");
-      const diarize=selected.transcriptionMode==="diarized";
+      const diarize=selected.transcriptionMode!=="openai";
       const result = await transcribeAudioWithOpenAI(blob,{diarize,participants:selected.participants});
       const text=diarize&&result.segments.length?speakerTranscript(result.segments,result.speakerNames):result.text;
       setDraft(text);
@@ -236,28 +198,7 @@ export default function RealFeatureView(p: Props) {
         error instanceof Error
           ? error.message
           : "Não foi possível transcrever pela OpenAI";
-      if ((message.includes("25 MB") || message.includes("muito grande")) && selected.transcriptionMode!=="diarized") {
-        setTranscriptionStatus("Áudio acima do limite: iniciando transcrição local em partes…");
-        setTranscriptionProgress(1);
-        try {
-          const blob = await fetch(selected.url).then((response) => response.blob());
-          const text = await transcribeAudioInChunks(blob, (status, progress) => {
-            setTranscriptionProgress(progress);
-            setTranscriptionStatus(status);
-          }, transcriptionQuality);
-          setDraft(text);
-          await p.updateRecording(selected.id, { transcript: text, transcriptionMode: "hybrid" });
-          setTranscriptionProgress(100);
-          setTranscriptionStatus("Transcrição local em partes concluída");
-          p.notify("Áudio grande transcrito em partes no aparelho");
-          return;
-        } catch (fallbackError) {
-          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Falha no modo local";
-          setTranscriptionStatus(`OpenAI: ${message} Modo local: ${fallbackMessage}`);
-        }
-      } else {
-        setTranscriptionStatus(message);
-      }
+      setTranscriptionStatus(message);
       p.notify("Falha na transcrição pela OpenAI");
     } finally {
       setTranscribing(false);
@@ -799,25 +740,18 @@ export default function RealFeatureView(p: Props) {
                     <small>O modo recomendado usa a OpenAI para separar os locutores e criar uma revisão assistida.</small>
                   </div>
                   <div className="mode-options">
-                    <label className={(selected.transcriptionMode||"diarized")==="diarized"?"selected recommended":""}>
-                      <input type="radio" name="transcription-mode" checked={(selected.transcriptionMode||"diarized")==="diarized"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"diarized"})}/>
+                    <label className={selected.transcriptionMode!=="openai"?"selected recommended":""}>
+                      <input type="radio" name="transcription-mode" checked={selected.transcriptionMode!=="openai"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"diarized"})}/>
                       <span><b>Recomendado · OpenAI + locutores</b><small>Transcreve, separa as vozes e permite identificar cada pessoa ouvindo um trecho</small></span>
                     </label>
                     <label className={selected.transcriptionMode==="openai"?"selected":""}>
                       <input type="radio" name="transcription-mode" checked={selected.transcriptionMode==="openai"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"openai"})}/>
                       <span><b>OpenAI sem locutores</b><small>Mais simples, sem separar quem falou cada trecho</small></span>
                     </label>
-                    <label className={selected.transcriptionMode==="hybrid"?"selected":""}>
-                      <input type="radio" name="transcription-mode" checked={selected.transcriptionMode==="hybrid"} onChange={()=>p.updateRecording(selected.id,{transcriptionMode:"hybrid"})}/>
-                      <span><b>Local de emergência</b><small>Processa em blocos de 3 minutos no Mac; mais lento e sem separar locutores</small></span>
-                    </label>
                   </div>
                   <div className="transcription-controls">
-                    {selected.transcriptionMode==="hybrid"&&<select value={transcriptionQuality} onChange={(e)=>setTranscriptionQuality(e.target.value as TranscriptionQuality)} disabled={transcribing} aria-label="Qualidade da transcrição">
-                      <option value="accurate">Mais preciso</option><option value="balanced">Equilibrado</option><option value="fast">Mais rápido</option>
-                    </select>}
-                    <button onClick={selected.transcriptionMode==="hybrid"?transcribeLocally:transcribeWithOpenAI} disabled={transcribing}>
-                      {transcribing?"Processando…":selected.transcriptionMode==="hybrid"?"Transcrever no aparelho":"Transcrever e identificar locutores"}
+                    <button onClick={transcribeWithOpenAI} disabled={transcribing}>
+                      {transcribing?"Processando…":selected.transcriptionMode==="openai"?"Transcrever pela OpenAI":"Transcrever e identificar locutores"}
                     </button>
                   </div>
                   {transcriptionStatus && (

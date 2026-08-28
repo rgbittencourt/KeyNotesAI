@@ -706,7 +706,7 @@ export default function Home() {
   const [meetingTime, setMeetingTime] = useState("");
   const [meetingTitleNow, setMeetingTitleNow] = useState("");
   const [newMeetingTranscriptionMode, setNewMeetingTranscriptionMode] =
-    useState<"hybrid" | "openai" | "diarized">("diarized");
+    useState<"openai" | "diarized">("diarized");
   const [newMeetingRecordingSource, setNewMeetingRecordingSource] = useState<
     "microphone" | "google-meet" | "google-meet-microphone"
   >("google-meet-microphone");
@@ -1526,15 +1526,11 @@ export default function Home() {
                         onChange={(e) =>
                           setNewMeetingTranscriptionMode(
                             e.target.value as
-                              | "hybrid"
                               | "openai"
                               | "diarized",
                           )
                         }
                       >
-                        <option value="hybrid">
-                          Híbrido · transcrição local (padrão)
-                        </option>
                         <option value="openai">
                           Totalmente OpenAI · áudio e documentos
                         </option>
