@@ -1,6 +1,7 @@
 import { DRIVE_ROOT_FOLDER_ID, getDriveAccessToken } from "./google-drive-oauth";
 import { buildStandaloneMindMapSvg } from "./mind-map-svg";
 import { buildDrivePdf } from "./drive-pdf";
+import { requireInstitutionalFile, type DriveEntry } from "./drive-scope";
 const SITE_ASSET_ORIGIN = (process.env.SITE_URL || "https://keynotes-ai.rogerio-bittencourt.chatgpt.site").replace(/\/$/, "");
 
 type DriveFile = { id: string; name: string; mimeType?: string; webViewLink: string };
@@ -113,6 +114,16 @@ export async function archiveMeetingInDrive(meeting: DriveMeeting, audio?: File 
   const token = await getDriveAccessToken();
   const folderName = `${folderDate(meeting.meetingDate || meeting.createdAt)} : ${folderTime(meeting.meetingTime)} - ${safeName(meeting.name)}`;
   const existingFolderId = folderIdFromMeeting(meeting);
+  // Client-provided destination and replacement IDs cannot expand institutional access.
+  const read = (id: string) => googleFetch<DriveEntry>(token, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,name,mimeType,parents,trashed&supportsAllDrives=true`, {});
+  if (existingFolderId) {
+    const target = await requireInstitutionalFile(existingFolderId, root, read);
+    if (target.mimeType !== "application/vnd.google-apps.folder" || existingFolderId === root) throw new Error("Selecione uma subpasta de reunião válida no KeyNotesAI.");
+    for (const file of meeting.driveFiles || []) {
+      const previous = await requireInstitutionalFile(file.id, root, read);
+      if (!previous.parents?.includes(existingFolderId) || previous.mimeType === "application/vnd.google-apps.folder") throw new Error("Um arquivo a substituir não pertence à pasta desta reunião.");
+    }
+  }
   const folder = existingFolderId
     ? { id: existingFolderId, name: folderName, mimeType: "application/vnd.google-apps.folder", webViewLink: `https://drive.google.com/drive/folders/${existingFolderId}` }
     : await createFolder(token, folderName, root);

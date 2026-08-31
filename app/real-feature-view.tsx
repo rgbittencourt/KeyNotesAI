@@ -309,6 +309,7 @@ export default function RealFeatureView(p: Props) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao salvar no Google Drive";
       setDriveStatus(message);
+      window.dispatchEvent(new Event("keynotesai:drive-status"));
       p.notify("Falha ao arquivar no Google Drive");
     } finally {
       setArchivingDrive(false);
@@ -928,8 +929,8 @@ export default function RealFeatureView(p: Props) {
                     {driveStatus && <p>{driveStatus}</p>}
                     {selected.driveFolderUrl && (
                       <div className="drive-links">
-                        <a href={selected.driveFolderUrl} target="_blank" rel="noreferrer">Abrir pasta completa ↗</a>
-                        {(selected.driveFiles || []).map((file) => <a key={file.id} href={file.webViewLink} target="_blank" rel="noreferrer">{file.name} ↗</a>)}
+                        <a href={`/?driveFolder=${encodeURIComponent(selected.driveFolderId || selected.driveFolderUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/)?.[1] || "")}`} target="_blank" rel="noreferrer">Abrir pasta no KeyNotesAI ↗</a>
+                        {(selected.driveFiles || []).map((file) => <a key={file.id} href={`/api/drive/file?id=${encodeURIComponent(file.id)}`} target="_blank" rel="noreferrer">{file.name} ↗</a>)}
                       </div>
                     )}
                   </div>

@@ -3,6 +3,10 @@ import { getRawDb } from "./server-access";
 export const DRIVE_ACCOUNT_EMAIL = "inovalab.cte@gmail.com";
 export const DRIVE_ROOT_FOLDER_ID = "15eNIgl3Zxu9j-eKCz8HS01a3KgXOvMIC";
 export const DRIVE_ROOT_FOLDER_URL = `https://drive.google.com/drive/folders/${DRIVE_ROOT_FOLDER_ID}`;
+export class DriveConnectionError extends Error {
+  code = "DRIVE_RECONNECT_REQUIRED";
+  constructor() { super("A conexão institucional do INOVALAB precisa ser renovada pelo administrador. Seu cadastro continua autorizado; você não precisa conectar uma conta Google pessoal."); }
+}
 const SCOPES = ["openid", "email", "https://www.googleapis.com/auth/drive"].join(" ");
 
 const enc = new TextEncoder(), dec = new TextDecoder();
@@ -59,14 +63,25 @@ export async function saveRefreshToken(refreshToken: string) {
 }
 export async function driveIntegrationStatus() {
   const row = await (await getRawDb()).prepare("SELECT account_email,root_folder_id,updated_at FROM google_drive_integrations WHERE id='inovalab'").first<Record<string, unknown>>();
-  return { connected: Boolean(row), accountEmail: row ? String(row.account_email) : DRIVE_ACCOUNT_EMAIL, rootFolderId: DRIVE_ROOT_FOLDER_ID, rootFolderUrl: DRIVE_ROOT_FOLDER_URL, updatedAt: row?.updated_at ? String(row.updated_at) : null, credentialsReady: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_TOKEN_ENCRYPTION_KEY) };
+  const base = { connected: false, accountEmail: row ? String(row.account_email) : DRIVE_ACCOUNT_EMAIL, rootFolderId: DRIVE_ROOT_FOLDER_ID, rootFolderUrl: DRIVE_ROOT_FOLDER_URL, updatedAt: row?.updated_at ? String(row.updated_at) : null, credentialsReady: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_TOKEN_ENCRYPTION_KEY) };
+  try {
+    const token = await getDriveAccessToken();
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${DRIVE_ROOT_FOLDER_ID}?fields=id,trashed&supportsAllDrives=true`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new Error("A pasta institucional está indisponível. O administrador precisa verificar as permissões no Google Drive.");
+    const folder = await response.json() as { trashed?: boolean };
+    if (folder.trashed) throw new Error("A pasta institucional foi movida para a lixeira.");
+    return { ...base, connected: true, state: "connected", message: "Acesso institucional disponível para todos os usuários cadastrados e ativos." };
+  } catch (error) {
+    return { ...base, state: error instanceof DriveConnectionError ? "reconnect_required" : "unavailable", message: error instanceof Response ? await error.text() : error instanceof DriveConnectionError ? error.message : "Não foi possível verificar a conexão institucional agora. Tente novamente ou avise o administrador." };
+  }
 }
 export async function getDriveAccessToken() {
   const row = await (await getRawDb()).prepare("SELECT encrypted_refresh_token FROM google_drive_integrations WHERE id='inovalab'").first<{ encrypted_refresh_token: string }>();
-  if (!row) throw new Response("O Admin ainda precisa conectar a conta Google do INOVALAB.", { status: 503 });
+  if (!row) throw new DriveConnectionError();
   const { clientId, clientSecret } = client(), refreshToken = await decryptToken(row.encrypted_refresh_token);
-  const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }) });
-  const body = await response.json() as { access_token?: string; error_description?: string };
-  if (!response.ok || !body.access_token) throw new Error(body.error_description || "Não foi possível renovar o acesso ao Google Drive.");
+  const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }), signal: AbortSignal.timeout(15000) });
+  const body = await response.json() as { access_token?: string; error?: string; error_description?: string };
+  if (body.error === "invalid_grant") throw new DriveConnectionError();
+  if (!response.ok || !body.access_token) throw new Error("Não foi possível renovar a conexão institucional agora. Avise o administrador.");
   return body.access_token;
 }
