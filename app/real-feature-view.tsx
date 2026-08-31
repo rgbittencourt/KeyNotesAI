@@ -9,7 +9,7 @@ import {
 } from "./openai-transcription";
 import { openProfessionalDocument } from "./professional-documents";
 import type { DeviceRecording, MeetingAttachment } from "./page";
-import DriveLibrary, { DriveDocument } from "./drive-library";
+import DriveLibrary, { openDriveDocumentWindow } from "./drive-library";
 
 type Props = {
   isAdmin: boolean;
@@ -51,7 +51,6 @@ const speakerTranscript=(segments:SpeakerSegment[],names:Record<string,string>)=
 
 export default function RealFeatureView(p: Props) {
   const [showDrive,setShowDrive]=useState(false);
-  const [driveDocument,setDriveDocument]=useState<{id:string;name:string}|null>(null);
   const filePhotoRef = useRef<HTMLInputElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -79,7 +78,7 @@ export default function RealFeatureView(p: Props) {
   const selected = p.recordings.find(
     (r) => r.id === (selectedId ?? p.recordings[0]?.id),
   );
-  useEffect(()=>{setShowDrive(false);setDriveDocument(null)},[selected?.id,selected?.ownerEmail]);
+  useEffect(()=>{setShowDrive(false)},[selected?.id,selected?.ownerEmail]);
   useEffect(
     () => setDraft(selected?.transcript || ""),
     [selected?.id, selected?.transcript],
@@ -894,9 +893,8 @@ export default function RealFeatureView(p: Props) {
                   <div><strong>Documentos institucionais no Google Drive</strong><small>{selected.driveFolderUrl?"Arquivos já preservados e recuperados para esta reunião.":"Cria uma subpasta com a gravação e todos os documentos desta reunião."}</small></div>
                   {selected.processedAt&&<button onClick={archiveInDrive} disabled={archivingDrive}>{archivingDrive?"Enviando ao Drive…":selected.driveFolderUrl?"Atualizar no Drive":"Arquivar no Drive"}</button>}
                   {driveStatus&&<p>{driveStatus}</p>}
-                  {selected.driveFolderUrl&&<div className="drive-links"><button onClick={()=>{setShowDrive(v=>!v);setDriveDocument(null)}}>{showDrive?"Fechar pasta":"Abrir pasta desta reunião"}</button>{(selected.driveFiles||[]).map(file=><button key={file.id} onClick={()=>{setDriveDocument(file);setShowDrive(false)}}>{file.name} · Abrir</button>)}</div>}
+                  {selected.driveFolderUrl&&<div className="drive-links"><button onClick={()=>setShowDrive(v=>!v)}>{showDrive?"Fechar pasta":"Abrir pasta completa ↗"}</button>{(selected.driveFiles||[]).map(file=><button key={file.id} onClick={()=>openDriveDocumentWindow(selected,file)}>{file.name} ↗</button>)}</div>}
                   {showDrive&&<DriveLibrary key={`${selected.ownerEmail}:${selected.id}`} isAdmin={p.isAdmin} meeting={selected}/>}
-                  {driveDocument&&<DriveDocument meeting={selected} file={driveDocument} close={()=>setDriveDocument(null)}/>}
                 </div>}
               </>
             ) : (
