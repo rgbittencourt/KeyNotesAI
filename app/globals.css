@@ -66,3 +66,15 @@
 .drive-archive .drive-links{display:flex!important;flex-wrap:wrap!important;align-items:center;gap:6px!important}
 .drive-archive .drive-links>a,.drive-archive .drive-links>button{display:inline-flex!important;align-items:center;width:auto!important;min-width:0!important;max-width:100%;min-height:0!important;margin:0!important;padding:6px 9px!important;border:1px solid #c9d9ce!important;border-radius:999px!important;background:#fff!important;color:#315c49!important;font-size:7px!important;font-weight:800!important;line-height:1.2!important;letter-spacing:0!important;text-align:left!important;text-decoration:none!important;white-space:nowrap}
 @media(max-width:600px){.drive-archive .drive-links>a,.drive-archive .drive-links>button{white-space:normal}}
+
+/* Drive folder browser follows the compact KeyNotesAI document pattern. */
+.drive-archive>.institutional-drive{grid-column:1/-1;width:100%;min-width:0;margin-top:5px;padding:12px 14px;border:1px solid #d7e4da;border-radius:8px;background:#fff}
+.drive-archive>.institutional-drive>h2{margin:0;font:15px Georgia,serif;color:#263b2f}
+.drive-archive>.institutional-drive>p{margin:4px 0 11px;font-size:8px;line-height:1.45;color:#708076}
+.drive-archive .drive-library-toolbar{margin:0 0 9px;gap:6px}
+.drive-archive .drive-library-toolbar button,.drive-archive .drive-library-toolbar a{padding:7px 9px;border-radius:6px;font-size:7px;font-weight:800}
+.drive-archive .drive-library-list{display:block;width:100%;min-width:0;margin:0;padding:0;border:0;box-shadow:none}
+.drive-archive .drive-library-list h3{margin:0;padding:8px 0;font-size:8px;line-height:1.35;color:#77736b;overflow-wrap:anywhere}
+.drive-archive .drive-library-row{display:block;width:100%;min-width:0;padding:0;border-top:1px solid #e5ebe6}
+.drive-archive .drive-library-row button{display:block;width:100%;min-width:0;padding:8px 3px;border:0;background:transparent;color:#315c49;font-size:8px;font-weight:750;line-height:1.35;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.drive-archive .drive-library-row button:hover{background:#f3f7f4}
