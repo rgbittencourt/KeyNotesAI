@@ -15,6 +15,12 @@ const entries = {
   loop: { id: "loop", name: "Ciclo", mimeType: "application/pdf", parents: ["loop"] },
 };
 const read = async id => { if (!entries[id]) throw new Response("Ausente", { status: 404 }); return entries[id]; };
+test("reunião não pode navegar para a pasta principal",async()=>assert.rejects(requireInstitutionalFile("root","meeting",read),e=>e.status===403));
+test("reunião permite seu próprio documento",async()=>assert.equal((await requireInstitutionalFile("document","meeting",read)).id,"document"));
+test("reunião não permite documento de reunião vizinha",async()=>{
+  const lookup=async id=>id==="otherDoc"?{id,name:"Outra ata",mimeType:"application/pdf",parents:["otherMeeting"]}:id==="otherMeeting"?{id,name:"Outra reunião",mimeType:"application/vnd.google-apps.folder",parents:["root"]}:read(id);
+  await assert.rejects(requireInstitutionalFile("otherDoc","meeting",lookup),e=>e.status===403);
+});
 test("permite raiz institucional", async () => assert.equal((await requireInstitutionalFile("root", "root", read)).id, "root"));
 test("permite documento em subpasta a qualquer usuário já autorizado pela rota", async () => assert.equal((await requireInstitutionalFile("document", "root", read)).id, "document"));
 test("rejeita arquivo fora do projeto", async () => assert.rejects(requireInstitutionalFile("private", "root", read), error => error.status === 403));

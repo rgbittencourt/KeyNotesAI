@@ -134,33 +134,40 @@ export async function archiveMeetingInDrive(meeting: DriveMeeting, audio?: File 
   const token = await getDriveAccessToken();
   const folderName = `${folderDate(meeting.meetingDate || meeting.createdAt)} : ${folderTime(meeting.meetingTime)} - ${safeName(meeting.name)}`;
   const existingFolderId = folderIdFromMeeting(meeting);
-  // Client-provided destination and replacement IDs cannot expand institutional access.
+  // Destination is resolved from the authorized meeting by the route.
   const read = (id: string) => googleFetch<DriveEntry>(token, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,name,mimeType,parents,trashed&supportsAllDrives=true`, {});
   if (existingFolderId) {
     const target = await requireInstitutionalFile(existingFolderId, root, read);
     if (target.mimeType !== "application/vnd.google-apps.folder" || existingFolderId === root) throw new Error("Selecione uma subpasta de reunião válida no KeyNotesAI.");
-    for (const file of meeting.driveFiles || []) {
-      const previous = await requireInstitutionalFile(file.id, root, read);
-      if (!previous.parents?.includes(existingFolderId) || previous.mimeType === "application/vnd.google-apps.folder") throw new Error("Um arquivo a substituir não pertence à pasta desta reunião.");
-    }
   }
   const folder = existingFolderId
     ? { id: existingFolderId, name: folderName, mimeType: "application/vnd.google-apps.folder", webViewLink: `https://drive.google.com/drive/folders/${existingFolderId}` }
     : await createFolder(token, folderName, root);
+  const existing: DriveFile[] = [];
+  let pageToken = "";
+  if(existingFolderId) do {
+    const query = new URLSearchParams({q:`'${folder.id}' in parents and trashed = false`,fields:"nextPageToken,files(id,name,mimeType,webViewLink)",pageSize:"100",supportsAllDrives:"true",includeItemsFromAllDrives:"true",...(pageToken?{pageToken}:{})});
+    const page = await googleFetch<{files:DriveFile[];nextPageToken?:string}>(token,`https://www.googleapis.com/drive/v3/files?${query}`,{});
+    existing.push(...page.files); pageToken=page.nextPageToken||"";
+  } while(pageToken);
+  async function save(name:string,content:Blob){
+    const prior=existing.find(file=>file.name===name&&file.mimeType!=="application/vnd.google-apps.folder");
+    if(!prior)return upload(token,folder.id,name,content);
+    return googleFetch<DriveFile>(token,`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(prior.id)}?uploadType=media&fields=id,name,mimeType,webViewLink&supportsAllDrives=true`,{method:"PATCH",headers:{"content-type":content.type||"application/octet-stream"},body:content});
+  }
   const generated = await Promise.all(documents(meeting).map(async (doc) => {
-    if ("svg" in doc) return upload(token, folder.id, doc.name, new Blob([doc.svg || ""], { type: "image/svg+xml;charset=utf-8" }));
+    if ("svg" in doc) return save(doc.name, new Blob([doc.svg || ""], { type: "image/svg+xml;charset=utf-8" }));
     const bytes = await buildDrivePdf(meeting, doc.kind, SITE_ASSET_ORIGIN);
     const buffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(buffer).set(bytes);
-    return upload(token, folder.id, doc.name, new Blob([buffer], { type: "application/pdf" }));
+    return save(doc.name, new Blob([buffer], { type: "application/pdf" }));
   }));
-  const files = [...generated];
-  if (audio?.size) files.push(await upload(token, folder.id, `00 - Gravação - ${safeName(meeting.name)}.${audio.type.includes("mpeg") ? "mp3" : audio.type.includes("mp4") ? "m4a" : "webm"}`, audio));
+  const files = [...existing.filter(file=>!generated.some(doc=>doc.id===file.id)), ...generated];
+  const retain=(file:DriveFile)=>{const index=files.findIndex(item=>item.id===file.id);if(index>=0)files[index]=file;else files.push(file)};
+  if (audio?.size) retain(await save(`00 - Gravação - ${safeName(meeting.name)}.${audio.type.includes("mpeg") ? "mp3" : audio.type.includes("mp4") ? "m4a" : "webm"}`, audio));
   if (photo?.size) {
     const extension = photo.type.includes("png") ? "png" : photo.type.includes("webp") ? "webp" : photo.type.includes("heic") ? "heic" : "jpg";
-    files.push(await upload(token, folder.id, `07 - Foto da reunião - ${safeName(meeting.name)}.${extension}`, photo));
+    retain(await save(`07 - Foto da reunião - ${safeName(meeting.name)}.${extension}`, photo));
   }
-  if (existingFolderId && meeting.driveFiles?.length)
-    await Promise.all(meeting.driveFiles.map((file) => trashFile(token, file.id)));
   return { folder, files };
 }
