@@ -64,5 +64,5 @@
 
 /* Keep Drive document links compact even when generic link/button styles load later. */
 .drive-archive .drive-links{display:flex!important;flex-wrap:wrap!important;align-items:center;gap:6px!important}
-.drive-archive .drive-links>a{display:inline-flex!important;align-items:center;width:auto!important;min-width:0!important;max-width:100%;min-height:0!important;margin:0!important;padding:6px 9px!important;border:1px solid #c9d9ce!important;border-radius:999px!important;background:#fff!important;color:#315c49!important;font-size:7px!important;font-weight:800!important;line-height:1.2!important;letter-spacing:0!important;text-align:left!important;text-decoration:none!important;white-space:nowrap}
-@media(max-width:600px){.drive-archive .drive-links>a{white-space:normal}}
+.drive-archive .drive-links>a,.drive-archive .drive-links>button{display:inline-flex!important;align-items:center;width:auto!important;min-width:0!important;max-width:100%;min-height:0!important;margin:0!important;padding:6px 9px!important;border:1px solid #c9d9ce!important;border-radius:999px!important;background:#fff!important;color:#315c49!important;font-size:7px!important;font-weight:800!important;line-height:1.2!important;letter-spacing:0!important;text-align:left!important;text-decoration:none!important;white-space:nowrap}
+@media(max-width:600px){.drive-archive .drive-links>a,.drive-archive .drive-links>button{white-space:normal}}
