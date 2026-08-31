@@ -9,6 +9,7 @@ import {
 } from "./openai-transcription";
 import { openProfessionalDocument } from "./professional-documents";
 import type { DeviceRecording, MeetingAttachment } from "./page";
+import DriveLibrary, { DriveDocument } from "./drive-library";
 
 type Props = {
   isAdmin: boolean;
@@ -49,6 +50,8 @@ const speakerTranscript=(segments:SpeakerSegment[],names:Record<string,string>)=
 }).join("\n\n");
 
 export default function RealFeatureView(p: Props) {
+  const [showDrive,setShowDrive]=useState(false);
+  const [driveDocument,setDriveDocument]=useState<{id:string;name:string}|null>(null);
   const filePhotoRef = useRef<HTMLInputElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -76,6 +79,7 @@ export default function RealFeatureView(p: Props) {
   const selected = p.recordings.find(
     (r) => r.id === (selectedId ?? p.recordings[0]?.id),
   );
+  useEffect(()=>{setShowDrive(false);setDriveDocument(null)},[selected?.id,selected?.ownerEmail]);
   useEffect(
     () => setDraft(selected?.transcript || ""),
     [selected?.id, selected?.transcript],
@@ -244,11 +248,12 @@ export default function RealFeatureView(p: Props) {
     setArchivingDrive(true);
     setDriveStatus("Preparando arquivos e gravação…");
     try {
-      const audio = await fetch(selected.url).then((response) => response.blob());
+      let audio:Blob|null=null;
+      if(selected.url){const response=await fetch(selected.url);if(response.ok)audio=await response.blob();else if(!selected.driveFolderId)throw new Error("Não foi possível recuperar a gravação. Seus documentos não foram alterados.");}
       const form = new FormData();
       const { meetingPhotoBlob: _photo, ...meeting } = selected;
       form.set("meeting", JSON.stringify(meeting));
-      form.set("audio", audio, `${selected.name}.${audioExtension(audio)}`);
+      if(audio)form.set("audio", audio, `${selected.name}.${audioExtension(audio)}`);
       if (selected.meetingPhotoBlob)
         form.set(
           "photo",
@@ -278,6 +283,7 @@ export default function RealFeatureView(p: Props) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao salvar no Google Drive";
       setDriveStatus(message);
+      window.dispatchEvent(new Event("keynotesai:drive-status"));
       p.notify("Falha ao arquivar no Google Drive");
     } finally {
       setArchivingDrive(false);
@@ -888,7 +894,9 @@ export default function RealFeatureView(p: Props) {
                   <div><strong>Documentos institucionais no Google Drive</strong><small>{selected.driveFolderUrl?"Arquivos já preservados e recuperados para esta reunião.":"Cria uma subpasta com a gravação e todos os documentos desta reunião."}</small></div>
                   {selected.processedAt&&<button onClick={archiveInDrive} disabled={archivingDrive}>{archivingDrive?"Enviando ao Drive…":selected.driveFolderUrl?"Atualizar no Drive":"Arquivar no Drive"}</button>}
                   {driveStatus&&<p>{driveStatus}</p>}
-                  {selected.driveFolderUrl&&<div className="drive-links"><a href={selected.driveFolderUrl} target="_blank" rel="noreferrer">Abrir pasta completa ↗</a>{(selected.driveFiles||[]).map(file=><a key={file.id} href={file.webViewLink} target="_blank" rel="noreferrer">{file.name} ↗</a>)}</div>}
+                  {selected.driveFolderUrl&&<div className="drive-links"><button onClick={()=>{setShowDrive(v=>!v);setDriveDocument(null)}}>{showDrive?"Fechar pasta":"Abrir pasta desta reunião"}</button>{(selected.driveFiles||[]).map(file=><button key={file.id} onClick={()=>{setDriveDocument(file);setShowDrive(false)}}>{file.name} · Abrir</button>)}</div>}
+                  {showDrive&&<DriveLibrary key={`${selected.ownerEmail}:${selected.id}`} isAdmin={p.isAdmin} meeting={selected}/>}
+                  {driveDocument&&<DriveDocument meeting={selected} file={driveDocument} close={()=>setDriveDocument(null)}/>}
                 </div>}
               </>
             ) : (

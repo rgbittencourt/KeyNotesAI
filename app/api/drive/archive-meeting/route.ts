@@ -1,5 +1,6 @@
 import { accessError, getRawDb, requireAccess } from "../../../server-access";
 import { archiveMeetingInDrive, type DriveMeeting } from "../../../google-drive";
+import { driveMeetingAccess } from "../../../drive-meeting-access";
 
 export const runtime = "edge";
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
@@ -23,16 +24,25 @@ export async function POST(request: Request) {
     const audio = form.get("audio");
     const photo = form.get("photo");
     if (typeof raw !== "string") return Response.json({ error: "Dados da reunião ausentes." }, { status: 400 });
-    const meeting = JSON.parse(raw) as DriveMeeting;
+    const meeting = JSON.parse(raw) as DriveMeeting & {ownerEmail?:string};
     if (!meeting?.id || !meeting.name?.trim()) return Response.json({ error: "Reunião inválida." }, { status: 400 });
+    const owner=user.role==="admin"&&meeting.ownerEmail?meeting.ownerEmail.toLowerCase():user.email;
+    // Ignore client destination/file IDs; use only the selected user's saved meeting.
+    delete meeting.driveFolderId; delete meeting.driveFolderUrl; delete meeting.driveFiles;
+    try {
+      const stored=await driveMeetingAccess(user,String(meeting.id),owner);
+      meeting.driveFolderId=stored.folderId; meeting.driveFiles=stored.files;
+    } catch(error) { if(!(error instanceof Response)||![404,409].includes(error.status))throw error; }
     if (audio instanceof File && audio.size > MAX_AUDIO_BYTES) return Response.json({ error: "A gravação excede 100 MB. Comprima ou divida o áudio antes de arquivar." }, { status: 413 });
     if (photo instanceof File && (!photo.type.startsWith("image/") || photo.size > MAX_PHOTO_BYTES)) return Response.json({ error: "A foto deve ser uma imagem de até 15 MB." }, { status: 413 });
     const result = await archiveMeetingInDrive(meeting, audio instanceof File ? audio : null, photo instanceof File ? photo : null);
     const id = crypto.randomUUID(), createdAt = new Date().toISOString();
     await (await getRawDb()).prepare("INSERT INTO drive_exports(id,email,local_meeting_id,meeting_title,folder_id,folder_url,files_json,created_at) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(id, user.email, String(meeting.id), meeting.name.trim(), result.folder.id, result.folder.webViewLink, JSON.stringify(result.files), createdAt).run();
+      .bind(id, owner, String(meeting.id), meeting.name.trim(), result.folder.id, result.folder.webViewLink, JSON.stringify(result.files), createdAt).run();
     const audioFile=result.files.find(file=>file.name.startsWith("00 - Gravação"));
-    if(audioFile)await(await getRawDb()).prepare("UPDATE meetings SET audio_file_id=?,updated_at=? WHERE email=? AND id=?").bind(audioFile.id,createdAt,user.email,String(meeting.id)).run();
+    const db=await getRawDb();
+    const saved=await db.prepare("SELECT data_json FROM meetings WHERE email=? AND id=?").bind(owner,String(meeting.id)).first<{data_json:string}>();
+    if(saved){const data={...JSON.parse(saved.data_json),driveFolderId:result.folder.id,driveFolderUrl:result.folder.webViewLink,driveFiles:result.files,driveSyncedAt:createdAt};await db.prepare("UPDATE meetings SET data_json=?,audio_file_id=COALESCE(?,audio_file_id),updated_at=? WHERE email=? AND id=?").bind(JSON.stringify(data),audioFile?.id||null,createdAt,owner,String(meeting.id)).run();}
     return Response.json({ id, folder: result.folder, files: result.files, createdAt });
   } catch (error) {
     if (error instanceof SyntaxError) return Response.json({ error: "Os dados da reunião estão corrompidos." }, { status: 400 });

@@ -5,6 +5,8 @@ import type { MindMap } from "./local-processing";
 import RealFeatureView from "./real-feature-view";
 import AdminPanel from "./admin-panel";
 import TrelloIntegrationPanel from "./trello-integration-panel";
+import DriveLibrary from "./drive-library";
+import { loadSession } from "./session-client";
 type SessionUser = {
   email: string;
   name: string;
@@ -18,6 +20,8 @@ type DriveStatus = {
   accountEmail: string;
   rootFolderUrl: string;
   credentialsReady: boolean;
+  state?: string;
+  message?: string;
 };
 type TrelloStatus={credentialsReady:boolean;configured:boolean;settings?:{boardName:string;listName:string}|null;boardUrl?:string|null};
 
@@ -692,6 +696,8 @@ function FeatureView({
 }
 
 export default function Home() {
+  const [sessionIssue,setSessionIssue]=useState("");
+  const [sessionAttempt,setSessionAttempt]=useState(0);
   const [session, setSession] = useState<SessionUser | null | undefined>(
     undefined,
   );
@@ -742,20 +748,20 @@ export default function Home() {
     useState<DriveStatus | null>(null);
   const [trelloIntegration,setTrelloIntegration]=useState<TrelloStatus|null>(null);
   useEffect(() => {
-    fetch("/api/session")
-      .then(async (r) => (r.ok ? (await r.json()).user : null))
-      .then(setSession)
-      .catch(() => setSession(null));
-  }, []);
+    const controller=new AbortController();setSessionIssue("");
+    loadSession<SessionUser>(controller.signal).then(user=>{if(!controller.signal.aborted)setSession(user)}).catch(error=>{if(!controller.signal.aborted)setSessionIssue(error instanceof Error?error.message:"Não foi possível verificar o acesso. Tente novamente.")});
+    return()=>controller.abort();
+  }, [sessionAttempt]);
   useEffect(() => {
-    if (session?.role !== "admin") return;
-    fetch("/api/admin/drive/status")
-      .then(async (response) =>
-        response.ok ? ((await response.json()) as DriveStatus) : null,
-      )
-      .then(setDriveIntegration)
-      .catch(() => setDriveIntegration(null));
+    if (!session) return;
+    let disposed = false;
+    const load = () => fetch("/api/drive/status", { cache: "no-store" }).then(async response => response.ok ? await response.json() as DriveStatus : null).then(value => { if (!disposed) setDriveIntegration(value); }).catch(() => { if (!disposed) setDriveIntegration(null); });
+    void load();
+    window.addEventListener("focus", load);
+    window.addEventListener("keynotesai:drive-status", load);
+    return () => { disposed = true; window.removeEventListener("focus", load); window.removeEventListener("keynotesai:drive-status", load); };
   }, [session]);
+  useEffect(() => { if (new URLSearchParams(location.search).has("driveFolder")) setActive("Google Drive"); }, []);
   useEffect(()=>{if(!session)return;const load=()=>fetch("/api/trello/status").then(async response=>response.ok?(await response.json() as TrelloStatus):null).then(setTrelloIntegration).catch(()=>setTrelloIntegration(null));void load();window.addEventListener("keynotesai:trello-configured",load);return()=>window.removeEventListener("keynotesai:trello-configured",load)},[session,active]);
   function notify(message: string) {
     setToast(message);
@@ -1138,8 +1144,9 @@ export default function Home() {
   if (session === undefined)
     return (
       <main className="auth-loading">
-        <span>◉</span>
-        <strong>Verificando acesso…</strong>
+        <span aria-hidden="true">{sessionIssue?"!":"◉"}</span>
+        <strong role={sessionIssue?"alert":"status"}>{sessionIssue||"Verificando acesso…"}</strong>
+        {sessionIssue&&<><button className="primary-btn" onClick={()=>setSessionAttempt(value=>value+1)}>Tentar novamente</button><a href="/signin-with-chatgpt?return_to=%2F" target="_top">Entrar novamente com ChatGPT</a><small>Suas gravações e documentos não serão apagados.</small></>}
       </main>
     );
   if (!session)
@@ -1293,22 +1300,8 @@ export default function Home() {
             <i>•••</i>
           </button>
           <button
-            onClick={() => {
-              if (session.role !== "admin") {
-                notify("Google Drive gerenciado pelo Admin do INOVALAB");
-                return;
-              }
-              if (!driveIntegration?.credentialsReady) {
-                notify("A integração do Google Drive ainda não está pronta");
-                return;
-              }
-              location.href = "/api/admin/drive/connect";
-            }}
-            title={
-              session.role === "admin"
-                ? "Conectar ou reconectar o Google Drive do INOVALAB"
-                : "Integração gerenciada pelo administrador"
-            }
+            onClick={() => { setActive("Google Drive"); window.dispatchEvent(new Event("keynotesai:drive-status")); }}
+            title={driveIntegration?.message || "Abrir o Drive institucional no KeyNotesAI"}
           >
             <img
               className="integration-logo"
@@ -1317,14 +1310,8 @@ export default function Home() {
             />
             <span>
               Google Drive
-              <small>
-                {session.role !== "admin"
-                  ? "INOVALAB"
-                  : driveIntegration?.connected
-                    ? "Conectado"
-                    : driveIntegration?.credentialsReady
-                      ? "Autorizar"
-                      : "Configurando"}
+              <small style={{ color: driveIntegration?.connected ? undefined : "#efc37b" }}>
+                {driveIntegration?.connected ? "Conectado · acesso compartilhado" : driveIntegration?.state === "reconnect_required" ? "Reconexão necessária" : "Conexão não confirmada"}
               </small>
             </span>
             <i>•••</i>
@@ -1448,7 +1435,7 @@ export default function Home() {
           )}
         </header>
         <div className="content">
-          {active === "Administração"&&session.role==="admin" ? <AdminPanel notify={notify}/> : active === "Trello" ? <TrelloIntegrationPanel isAdmin={session.role==="admin"} notify={notify}/> : active !== "Visão geral" ? (
+          {active === "Google Drive" ? <DriveLibrary isAdmin={session.role === "admin"}/> : active === "Administração"&&session.role==="admin" ? <AdminPanel notify={notify}/> : active === "Trello" ? <TrelloIntegrationPanel isAdmin={session.role==="admin"} notify={notify}/> : active !== "Visão geral" ? (
             <RealFeatureView
               isAdmin={session.role === "admin"}
               active={active}

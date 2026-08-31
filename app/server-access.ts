@@ -3,15 +3,16 @@ import { getChatGPTUser } from "./chatgpt-auth";
 
 export const ADMIN_EMAIL = "rogerio.bittencourt@ifsc.edu.br";
 const period = () => new Date().toISOString().slice(0, 7);
-let initialized: Promise<void> | null = null;
+let initialized = false;
 
 function db() {
   if (!env.DB) throw new Error("Banco de usuários indisponível.");
   return env.DB;
 }
 async function init() {
-  if (!initialized)
-    initialized = (async () => {
+  if (!initialized) {
+      // Cache only completion, never request-owned I/O: an interrupted request
+      // must not leave later requests waiting on its suspended promise.
       const d = db();
       await d.batch([
         d.prepare(
@@ -54,8 +55,8 @@ async function init() {
           "CREATE TABLE IF NOT EXISTS meeting_transfers (source_email TEXT NOT NULL, meeting_id TEXT NOT NULL, target_email TEXT NOT NULL, transferred_at TEXT NOT NULL, PRIMARY KEY(source_email,meeting_id))",
         ),
       ]);
-    })();
-  return initialized;
+      initialized = true;
+  }
 }
 
 export type AccessUser = {
