@@ -8,23 +8,26 @@ type User = {
   monthlyLimit: number;
   used: number;
 };
+type AdminMeeting={id:string;ownerEmail:string;name:string;createdAt:string;updatedAt:string};
 export default function AdminPanel({
   notify,
 }: {
   notify: (message: string) => void;
 }) {
   const [users, setUsers] = useState<User[]>([]),
+    [meetings,setMeetings]=useState<AdminMeeting[]>([]),
+    [meetingOwners,setMeetingOwners]=useState<Record<string,string>>({}),
     [email, setEmail] = useState(""),
     [name, setName] = useState(""),
     [limit, setLimit] = useState(50),
     [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch("/api/admin/users"),
-      b = await r.json();
+    const [r,mr]=await Promise.all([fetch("/api/admin/users"),fetch("/api/admin/meetings")]),b = await r.json(),mb=await mr.json()as{meetings?:AdminMeeting[]};
     if (r.ok) setUsers(b.users);
     else notify(b.error || "Não foi possível carregar usuários");
     setLoading(false);
+    if(mr.ok){setMeetings(mb.meetings||[]);setMeetingOwners(Object.fromEntries((mb.meetings||[]).map(meeting=>[`${meeting.ownerEmail}:${meeting.id}`,meeting.ownerEmail])))}
   }, [notify]);
   useEffect(() => {
     void load();
@@ -64,6 +67,17 @@ export default function AdminPanel({
     if (!r.ok) return notify(b.error);
     notify("Usuário excluído");
     await load();
+  }
+  async function impersonate(user:User){
+    const response=await fetch("/api/admin/impersonation",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:user.email})}),body=await response.json()as{error?:string};
+    if(!response.ok)return notify(body.error||"Não foi possível visualizar como este usuário");
+    location.reload();
+  }
+  async function transferMeeting(meeting:AdminMeeting){
+    const key=`${meeting.ownerEmail}:${meeting.id}`,toEmail=meetingOwners[key];if(!toEmail||toEmail===meeting.ownerEmail)return notify("Selecione um novo proprietário");
+    const target=users.find(user=>user.email===toEmail);if(!confirm(`Transferir “${meeting.name}” e todos os seus dados de ${meeting.ownerEmail} para ${target?.name||toEmail}?`))return;
+    const response=await fetch("/api/admin/meetings",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({meetingId:meeting.id,fromEmail:meeting.ownerEmail,toEmail})}),body=await response.json()as{error?:string};
+    if(!response.ok)return notify(body.error||"Não foi possível transferir a reunião");notify("Reunião e todos os vínculos transferidos");await load();
   }
   return (
     <section className="feature-page">
@@ -156,6 +170,7 @@ export default function AdminPanel({
                 {user.status === "active" ? "Ativo" : "Desativado"}
               </button>
               <div>
+                {user.role!=="admin"&&<button onClick={()=>void impersonate(user)}>Visualizar como</button>}
                 <button
                   onClick={() =>
                     update(user, { monthlyLimit: user.monthlyLimit })
@@ -170,6 +185,10 @@ export default function AdminPanel({
             </div>
           ))
         )}
+      </article>
+      <article className="card admin-meetings">
+        <div className="admin-meetings-title"><div><strong>Propriedade das reuniões</strong><small>Transfira a reunião completa, incluindo documentos, ações, decisões, pendências, bloqueios, Drive e Trello.</small></div><span>{meetings.length} reunião(ões)</span></div>
+        {loading?<div className="admin-empty">Carregando reuniões…</div>:meetings.length===0?<div className="admin-empty">Nenhuma reunião armazenada.</div>:meetings.map(meeting=>{const key=`${meeting.ownerEmail}:${meeting.id}`;return <div className="admin-meeting" key={key}><div><strong>{meeting.name}</strong><small>{meeting.createdAt||"Data não informada"} · Proprietário atual: {users.find(user=>user.email===meeting.ownerEmail)?.name||meeting.ownerEmail}</small></div><select value={meetingOwners[key]||meeting.ownerEmail} onChange={event=>setMeetingOwners(values=>({...values,[key]:event.target.value}))}>{users.filter(user=>user.status==="active").map(user=><option key={user.email} value={user.email}>{user.name||user.email}{user.email===meeting.ownerEmail?" · atual":""}</option>)}</select><button disabled={!meetingOwners[key]||meetingOwners[key]===meeting.ownerEmail} onClick={()=>void transferMeeting(meeting)}>Transferir tudo</button></div>})}
       </article>
     </section>
   );

@@ -12,6 +12,7 @@ type SessionUser = {
   role: "admin" | "user";
   monthlyLimit: number;
   used: number;
+  impersonatedBy?: { email: string; name: string };
 };
 type DriveStatus = {
   connected: boolean;
@@ -30,6 +31,9 @@ export type DeviceRecording = {
   duration: string;
   size: string;
   url: string;
+  audioBlob?: Blob;
+  cloudSynced?: boolean;
+  ownerEmail?: string;
   audioMimeType?: string;
   meetingDate?: string;
   meetingTime?: string;
@@ -56,6 +60,8 @@ export type DeviceRecording = {
     text: string;
   }>;
   speakerNames?: Record<string, string>;
+  voiceSamples?: Array<{ name: string; reference: string }>;
+  speakerReviewStatus?: "pending" | "confirmed";
   recordingSource?: "microphone" | "google-meet" | "google-meet-microphone";
   driveFolderUrl?: string;
   driveFolderId?: string;
@@ -131,6 +137,7 @@ async function loadRecordings(): Promise<DeviceRecording[]> {
           .map((r) => ({
             ...r,
             url: URL.createObjectURL(r.blob),
+            audioBlob: r.blob,
             audioMimeType: r.audioMimeType || r.blob?.type,
             meetingPhotoUrl: r.meetingPhotoBlob
               ? URL.createObjectURL(r.meetingPhotoBlob)
@@ -145,6 +152,21 @@ async function loadRecordings(): Promise<DeviceRecording[]> {
       );
     req.onerror = () => reject(req.error);
   });
+}
+
+function cloudMeeting(record:DeviceRecording){
+  const copy={...record} as Record<string,unknown>;delete copy.url;delete copy.audioBlob;delete copy.meetingPhotoBlob;
+  copy.attachments=(record.attachments||[]).map(({blob:_blob,url:_url,...item})=>item);
+  return copy;
+}
+async function uploadMeetingToCloud(record:DeviceRecording,blob:Blob){
+  const form=new FormData();form.set("meeting",JSON.stringify(cloudMeeting(record)));form.set("audio",blob,`${record.name}.${record.audioMimeType?.includes("mp4")?"m4a":record.audioMimeType?.includes("mpeg")?"mp3":"webm"}`);
+  const response=await fetch("/api/meetings",{method:"POST",body:form}),body=await response.json() as{meeting?:DeviceRecording;error?:string};
+  if(!response.ok||!body.meeting)throw new Error(body.error||"Não foi possível sincronizar a reunião");return body.meeting;
+}
+async function saveMeetingToCloud(record:DeviceRecording){
+  const response=await fetch("/api/meetings",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({meeting:cloudMeeting(record)})});
+  if(!response.ok){const body=await response.json().catch(()=>({})) as{error?:string};throw new Error(body.error||"Não foi possível sincronizar a reunião")}
 }
 
 const meetings = [
@@ -693,6 +715,7 @@ export default function Home() {
   const pausedAtRef=useRef(0);
   const pausedDurationRef=useRef(0);
   const participantsRef = useRef<string[]>([]);
+  const voiceSamplesRef = useRef<Array<{ name: string; reference: string }>>([]);
   const audioImportRef = useRef<HTMLInputElement | null>(null);
   const [recordingIssue, setRecordingIssue] = useState("");
   const [toast, setToast] = useState("");
@@ -709,11 +732,12 @@ export default function Home() {
   const [meetingTime, setMeetingTime] = useState("");
   const [meetingTitleNow, setMeetingTitleNow] = useState("");
   const [newMeetingTranscriptionMode, setNewMeetingTranscriptionMode] =
-    useState<"hybrid" | "openai" | "diarized">("diarized");
+    useState<"openai" | "diarized">("diarized");
   const [newMeetingRecordingSource, setNewMeetingRecordingSource] = useState<
     "microphone" | "google-meet" | "google-meet-microphone"
   >("google-meet-microphone");
   const [liveParticipants, setLiveParticipants] = useState<string[]>([]);
+  const [liveVoiceSampleNames,setLiveVoiceSampleNames]=useState<string[]>([]);
   const [listeningParticipant, setListeningParticipant] = useState(false);
   const[pendingMeeting,setPendingMeeting]=useState<(Omit<DeviceRecording,"url">&{blob:Blob})|null>(null);
   const[postMeetingName,setPostMeetingName]=useState("");
@@ -741,7 +765,7 @@ export default function Home() {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
   }
-  function registerParticipant(name: string) {
+  function registerParticipant(name: string, reference?: string) {
     const clean = name
       .replace(/^(meu nome [eé]|eu sou|sou o|sou a)\s+/i, "")
       .replace(/\s+(e estou presente|presente)$/i, "")
@@ -751,10 +775,14 @@ export default function Home() {
     if (!next.some((x) => x.toLocaleLowerCase() === clean.toLocaleLowerCase()))
       next.push(clean);
     participantsRef.current = next;
+    if(reference){
+      voiceSamplesRef.current=[...voiceSamplesRef.current.filter(sample=>sample.name.toLocaleLowerCase()!==clean.toLocaleLowerCase()),{name:clean,reference}];
+      setLiveVoiceSampleNames(voiceSamplesRef.current.map(sample=>sample.name));
+    }
     setLiveParticipants(next);
-    notify(`${clean} registrado(a) na presença`);
+    notify(`${clean} registrado(a)${reference?" com amostra de voz":""}`);
   }
-  function captureParticipant() {
+  async function captureParticipant(forcedName?: string) {
     const SpeechRecognition =
       (
         window as unknown as {
@@ -764,21 +792,38 @@ export default function Home() {
       ).SpeechRecognition ||
       (window as unknown as { webkitSpeechRecognition?: new () => any })
         .webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    if (!SpeechRecognition && !forcedName) {
       notify("Reconhecimento de nomes indisponível; digite o nome manualmente");
       return;
     }
-    const recognition = new SpeechRecognition();
-    recognition.lang = "pt-BR";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    const recognition = SpeechRecognition&&!forcedName?new SpeechRecognition():null;
+    if(recognition){recognition.lang = "pt-BR";recognition.interimResults = false;recognition.maxAlternatives = 1}
     setListeningParticipant(true);
-    recognition.onresult = (event: any) =>
-      registerParticipant(event.results[0][0].transcript);
-    recognition.onerror = () =>
+    let recognizedName=forcedName||"",sampleRecorder:MediaRecorder|null=null;const sampleChunks:Blob[]=[];
+    const source=streamRef.current;
+    if(source?.getAudioTracks().length&&typeof MediaRecorder!=="undefined"){
+      const sampleStream=new MediaStream(source.getAudioTracks().map(track=>track.clone()));
+      const mime=["audio/webm;codecs=opus","audio/mp4","audio/webm"].find(type=>MediaRecorder.isTypeSupported(type));
+      sampleRecorder=new MediaRecorder(sampleStream,{audioBitsPerSecond:24000,...(mime?{mimeType:mime}:{})});
+      sampleRecorder.ondataavailable=event=>{if(event.data.size)sampleChunks.push(event.data)};
+      sampleRecorder.onstop=()=>{void(async()=>{
+        sampleStream.getTracks().forEach(track=>track.stop());
+        if(!recognizedName||!sampleChunks.length){setListeningParticipant(false);return}
+        const sample=new Blob(sampleChunks,{type:sampleRecorder?.mimeType||"audio/webm"}),bytes=new Uint8Array(await sample.arrayBuffer());let binary="";
+        for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));
+        registerParticipant(recognizedName,`data:${sample.type};base64,${btoa(binary)}`);setListeningParticipant(false);
+      })()};
+      sampleRecorder.start();window.setTimeout(()=>{if(sampleRecorder?.state==="recording")sampleRecorder.stop()},5000);
+    }
+    if(recognition)recognition.onresult = (event: any) => {
+      recognizedName=event.results[0][0].transcript;
+      if(!sampleRecorder)registerParticipant(recognizedName);
+    };
+    if(recognition)recognition.onerror = () =>
       notify("Não entendi o nome. Tente novamente ou digite manualmente");
-    recognition.onend = () => setListeningParticipant(false);
-    recognition.start();
+    if(recognition)recognition.onend = () => {if(!sampleRecorder)setListeningParticipant(false)};
+    if(recognition)recognition.start();
+    else if(!sampleRecorder){registerParticipant(recognizedName);setListeningParticipant(false)}
   }
   function runSearch() {
     const q = searchTerm.toLowerCase();
@@ -792,18 +837,27 @@ export default function Home() {
     setHeaderPanel(null);
   }
   useEffect(() => {
-    loadRecordings()
-      .then(setDeviceRecordings)
-      .catch(() => {});
-    return () => deviceRecordings.forEach((r) => URL.revokeObjectURL(r.url));
-  }, []);
+    if(!session)return;
+    let cancelled=false;
+    void(async()=>{try{
+      const local=session.impersonatedBy?[]:await loadRecordings(),response=await fetch("/api/meetings"),body=await response.json() as{meetings?:DeviceRecording[];transferredMeetingIds?:number[]},transferredIds=new Set(body.transferredMeetingIds||[]),availableLocal=local.filter(row=>!transferredIds.has(row.id));
+      const cloud=response.ok?body.meetings||[]:[],cloudOwnIds=new Set(cloud.filter(row=>!row.ownerEmail||row.ownerEmail===session.email).map(row=>row.id)),localById=new Map(availableLocal.map(row=>[row.id,row]));
+      const merged=[...cloud.map(row=>{const localRecord=!row.ownerEmail||row.ownerEmail===session.email?localById.get(row.id):undefined;return localRecord?{...localRecord,...row,url:localRecord.url,audioBlob:localRecord.audioBlob,cloudSynced:true}:row}),...availableLocal.filter(row=>!cloudOwnIds.has(row.id))].sort((a,b)=>b.id-a.id);
+      if(!cancelled)setDeviceRecordings(merged);
+      for(const record of availableLocal.filter(row=>!cloudOwnIds.has(row.id))){
+        try{const saved=await uploadMeetingToCloud(record,record.audioBlob!);if(!cancelled)setDeviceRecordings(rows=>rows.map(row=>row.id===record.id?{...saved,url:record.url,audioBlob:record.audioBlob}:row))}catch{}
+      }
+    }catch{if(!cancelled){if(session.impersonatedBy)setDeviceRecordings([]);else loadRecordings().then(setDeviceRecordings).catch(()=>{})}}})();
+    return()=>{cancelled=true};
+  }, [session?.email,session?.impersonatedBy?.email]);
   useEffect(() => {
+    if(session?.impersonatedBy){setScheduledMeetings([]);return}
     try {
       setScheduledMeetings(
         JSON.parse(localStorage.getItem("keynotesai-meetings") || "[]"),
       );
     } catch {}
-  }, []);
+  }, [session?.impersonatedBy?.email]);
   useEffect(() => {
     if (!recording||recordingPaused) return;
     const timer = window.setInterval(
@@ -902,7 +956,9 @@ export default function Home() {
         transcriptionMode = newMeetingTranscriptionMode;
       chunksRef.current = [];
       participantsRef.current = [];
+      voiceSamplesRef.current = [];
       setLiveParticipants([]);
+      setLiveVoiceSampleNames([]);
       startedAtRef.current = Date.now();
       pausedAtRef.current=0;pausedDurationRef.current=0;
       setRecordingSeconds(0);
@@ -926,6 +982,7 @@ export default function Home() {
             minute: "2-digit",
           }),
           participants: participantsRef.current.join("\n"),
+          voiceSamples: voiceSamplesRef.current,
           duration: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
           size: `${(blob.size / 1024 / 1024).toFixed(1)} MB`,
           audioMimeType: blob.type,
@@ -936,7 +993,9 @@ export default function Home() {
         setMeetingTitleNow("");
         notify("Gravação encerrada. Confirme a presença antes de salvar.");
       };
-      recorder.start(1000);
+      // Um único contêiner final evita WebM/MP4 fragmentado, que pode tocar no
+      // navegador mas ser recusado por serviços de transcrição.
+      recorder.start();
       recorderRef.current = recorder;
       streamRef.current = stream;
       const displayVideoTrack = sourceStreamsRef.current
@@ -985,19 +1044,21 @@ export default function Home() {
       size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
       audioMimeType: file.type,
       transcriptionMode: newMeetingTranscriptionMode,
+      ownerEmail:session?.email,
     };
     await persistRecording({ ...base, blob: file });
-    setDeviceRecordings((r) => [
-      { ...base, url: URL.createObjectURL(file) },
-      ...r,
-    ]);
+    const local={...base,url:URL.createObjectURL(file),audioBlob:file} as DeviceRecording;
+    try{const saved=await uploadMeetingToCloud(local,file);setDeviceRecordings(r=>[{...saved,url:local.url,audioBlob:file},...r])}catch{setDeviceRecordings(r=>[local,...r]);notify("Áudio salvo neste aparelho; sincronização com a nuvem pendente")}
     setRecordingIssue("");
     setActive("Arquivos");
     notify("Áudio importado e salvo no aparelho");
   }
-  async function finalizePendingMeeting(){if(!pendingMeeting)return;const record={...pendingMeeting,participants:participantsRef.current.join("\n")};await persistRecording(record);setDeviceRecordings(rows=>[{...record,url:URL.createObjectURL(record.blob)},...rows]);setPendingMeeting(null);setPostMeetingName("");setActive("Arquivos");notify("Reunião, áudio e lista de presença salvos")}
+  async function finalizePendingMeeting(){if(!pendingMeeting)return;const record={...pendingMeeting,ownerEmail:session?.email,participants:participantsRef.current.join("\n"),voiceSamples:voiceSamplesRef.current};await persistRecording(record);const local={...record,url:URL.createObjectURL(record.blob),audioBlob:record.blob} as DeviceRecording;try{const saved=await uploadMeetingToCloud(local,record.blob);setDeviceRecordings(rows=>[{...saved,ownerEmail:session?.email,url:local.url,audioBlob:record.blob},...rows]);notify("Reunião salva e disponível em qualquer computador")}catch{setDeviceRecordings(rows=>[local,...rows]);notify("Reunião salva neste aparelho; sincronização com a nuvem pendente")}setPendingMeeting(null);setPostMeetingName("");setActive("Arquivos")}
   async function updateRecording(id: number, patch: Partial<DeviceRecording>) {
-    await patchRecording(id, patch);
+    const current=deviceRecordings.find(row=>row.id===id);if(!current)return;
+    if(current.audioBlob)await patchRecording(id, patch);
+    const updated={...current,...patch};
+    try{await saveMeetingToCloud(updated)}catch{notify("Alteração salva neste aparelho; sincronização pendente")}
     setDeviceRecordings((rows) =>
       rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
     );
@@ -1012,7 +1073,7 @@ export default function Home() {
     const response = await fetch("/api/admin/meetings", {
       method: "DELETE",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ meetingId: id }),
+      body: JSON.stringify({ meetingId: id, ownerEmail: target.ownerEmail }),
     });
     const body = (await response.json().catch(() => ({}))) as {
       error?: string;
@@ -1180,7 +1241,8 @@ export default function Home() {
       </main>
     );
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${session.impersonatedBy?"impersonating":""}`}>
+      {session.impersonatedBy&&<div className="impersonation-banner" role="status"><span>Você está acessando como <strong>{session.name}</strong> · {session.email}</span><button onClick={async()=>{const response=await fetch("/api/admin/impersonation",{method:"DELETE"});if(response.ok)location.reload();else notify("Não foi possível voltar ao administrador")}}>Voltar ao administrador</button></div>}
       <aside className="sidebar">
         <div className="brand">
           <button
@@ -1384,6 +1446,7 @@ export default function Home() {
               updateRecording={updateRecording}
               deleteRecording={deleteRecording}
               liveParticipants={liveParticipants}
+              liveVoiceSampleNames={liveVoiceSampleNames}
               listeningParticipant={listeningParticipant}
               captureParticipant={captureParticipant}
               registerParticipant={registerParticipant}
@@ -1508,15 +1571,11 @@ export default function Home() {
                         onChange={(e) =>
                           setNewMeetingTranscriptionMode(
                             e.target.value as
-                              | "hybrid"
                               | "openai"
                               | "diarized",
                           )
                         }
                       >
-                        <option value="hybrid">
-                          Híbrido · transcrição local (padrão)
-                        </option>
                         <option value="openai">
                           Totalmente OpenAI · áudio e documentos
                         </option>
@@ -1793,7 +1852,7 @@ export default function Home() {
             <p className="eyebrow">GRAVAÇÃO ENCERRADA</p>
             <h2 id="finalize-title">Confirme a presença</h2>
             <p>Você pode registrar nomes por voz agora, completar manualmente e salvar quando terminar.</p>
-            <button className={`voice-attendance ${listeningParticipant ? "listening" : ""}`} onClick={captureParticipant}>
+            <button className={`voice-attendance ${listeningParticipant ? "listening" : ""}`} onClick={()=>void captureParticipant()}>
               {listeningParticipant ? "Ouvindo o nome…" : "◉ Registrar uma pessoa por voz"}
             </button>
             <div className="finalize-manual">
@@ -1802,7 +1861,7 @@ export default function Home() {
             </div>
             <div className="finalize-presence-list">
               <strong>{liveParticipants.length} participante(s)</strong>
-              {liveParticipants.length ? <ul>{liveParticipants.map(name=><li key={name}>✓ {name}</li>)}</ul> : <p>Nenhum nome registrado. Você ainda pode salvar e preencher depois nos dados da reunião.</p>}
+              {liveParticipants.length ? <ul>{liveParticipants.map(name=><li key={name}>✓ {name}{liveVoiceSampleNames.some(sample=>sample.toLocaleLowerCase()===name.toLocaleLowerCase())?" · voz cadastrada":" · sem amostra"}</li>)}</ul> : <p>Nenhum nome registrado. Você ainda pode salvar e preencher depois nos dados da reunião.</p>}
             </div>
             <button className="finalize-save" onClick={()=>void finalizePendingMeeting()}>Salvar reunião e abrir os arquivos</button>
           </section>

@@ -2,6 +2,7 @@ import { DRIVE_ROOT_FOLDER_ID, getDriveAccessToken } from "./google-drive-oauth"
 import { buildStandaloneMindMapSvg } from "./mind-map-svg";
 import { buildDrivePdf } from "./drive-pdf";
 import { requireInstitutionalFile, type DriveEntry } from "./drive-scope";
+import { institutionalReader } from "./drive-reader";
 const SITE_ASSET_ORIGIN = (process.env.SITE_URL || "https://keynotes-ai.rogerio-bittencourt.chatgpt.site").replace(/\/$/, "");
 
 type DriveFile = { id: string; name: string; mimeType?: string; webViewLink: string };
@@ -70,6 +71,25 @@ async function upload(token: string, folderId: string, name: string, content: Bl
     headers: { "content-type": `multipart/related; boundary=${boundary}` },
     body,
   });
+}
+
+export async function storeMeetingAudio(meeting:DriveMeeting,audio:File){
+  const token=await getDriveAccessToken(),folderName=`${folderDate(meeting.meetingDate||meeting.createdAt)} : ${folderTime(meeting.meetingTime)} - ${safeName(meeting.name)}`;
+  const existingFolderId=folderIdFromMeeting(meeting);
+  if(existingFolderId){
+    const reader=await institutionalReader(),target=await reader.check(existingFolderId);
+    if(target.mimeType!=="application/vnd.google-apps.folder"||existingFolderId===DRIVE_ROOT_FOLDER_ID)throw new Response("Selecione uma subpasta de reunião válida no KeyNotesAI.",{status:403});
+  }
+  const folder=existingFolderId?{id:existingFolderId,name:folderName,mimeType:"application/vnd.google-apps.folder",webViewLink:`https://drive.google.com/drive/folders/${existingFolderId}`} : await createFolder(token,folderName,DRIVE_ROOT_FOLDER_ID);
+  const extension=audio.type.includes("mpeg")?"mp3":audio.type.includes("mp4")?"m4a":audio.type.includes("wav")?"wav":"webm";
+  const file=await upload(token,folder.id,`00 - Gravação - ${safeName(meeting.name)}.${extension}`,audio);
+  return{folder,file};
+}
+
+export async function readDriveFile(fileId:string,range?:string|null){
+  const reader=await institutionalReader();
+  await reader.check(fileId);
+  return reader.request(`files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,range?{range}:{});
 }
 
 async function trashFile(token: string, fileId: string) {

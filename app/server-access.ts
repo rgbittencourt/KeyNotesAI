@@ -44,6 +44,15 @@ async function init() {
         d.prepare(
           "CREATE UNIQUE INDEX IF NOT EXISTS idx_trello_exports_meeting ON trello_exports(email,local_meeting_id)",
         ),
+        d.prepare(
+          "CREATE TABLE IF NOT EXISTS meetings (id TEXT NOT NULL, email TEXT NOT NULL, data_json TEXT NOT NULL, audio_file_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(email,id), FOREIGN KEY (email) REFERENCES app_users(email) ON DELETE CASCADE)",
+        ),
+        d.prepare(
+          "CREATE INDEX IF NOT EXISTS idx_meetings_email_updated ON meetings(email,updated_at DESC)",
+        ),
+        d.prepare(
+          "CREATE TABLE IF NOT EXISTS meeting_transfers (source_email TEXT NOT NULL, meeting_id TEXT NOT NULL, target_email TEXT NOT NULL, transferred_at TEXT NOT NULL, PRIMARY KEY(source_email,meeting_id))",
+        ),
       ]);
     })();
   return initialized;
@@ -57,8 +66,10 @@ export type AccessUser = {
   status: "active" | "disabled";
   monthlyLimit: number;
   used: number;
+  impersonatedBy?: { email: string; name: string };
 };
-export async function requireAccess(): Promise<AccessUser> {
+function impersonationEmail(cookie:string|null){const match=cookie?.match(/(?:^|;\s*)keynotesai_impersonate=([^;]+)/);if(!match)return"";try{return decodeURIComponent(match[1]).toLowerCase()}catch{return""}}
+export async function requireAccess(options?:{ignoreImpersonation?:boolean}): Promise<AccessUser> {
   const identity = await getChatGPTUser();
   if (!identity) throw new Response("Autenticação necessária", { status: 401 });
   await init();
@@ -97,6 +108,13 @@ export async function requireAccess(): Promise<AccessUser> {
   if (!row) throw new Response("Usuário não autorizado", { status: 403 });
   if (row.status !== "active")
     throw new Response("Usuário desativado", { status: 403 });
+  if(email===ADMIN_EMAIL&&!options?.ignoreImpersonation){
+    const requestHeaders=await import("next/headers").then(module=>module.headers()),targetEmail=impersonationEmail(requestHeaders.get("cookie"));
+    if(targetEmail&&targetEmail!==ADMIN_EMAIL){
+      const target=await d.prepare("SELECT u.email,u.user_id,u.name,u.role,u.status,u.monthly_limit,COALESCE(x.used,0) used FROM app_users u LEFT JOIN api_usage x ON x.email=u.email AND x.period=? WHERE u.email=?").bind(period(),targetEmail).first<Record<string,unknown>>();
+      if(target&&target.status==="active")return{userId:String(target.user_id||target.email),email:String(target.email),name:String(target.name||target.email),role:"user",status:"active",monthlyLimit:Number(target.monthly_limit),used:Number(target.used),impersonatedBy:{email,name:String(row.name||identity.displayName)}};
+    }
+  }
   return {
     userId: String(row.user_id || identity.userId),
     email: String(row.email),
@@ -113,6 +131,7 @@ export async function requireAdmin() {
     throw new Response("Acesso administrativo necessário", { status: 403 });
   return user;
 }
+export async function requireActualAdmin(){const user=await requireAccess({ignoreImpersonation:true});if(user.role!=="admin")throw new Response("Acesso administrativo necessário",{status:403});return user}
 export async function consumeUsage(email: string) {
   await init();
   const result = await db()
