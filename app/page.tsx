@@ -6,6 +6,7 @@ import RealFeatureView from "./real-feature-view";
 import AdminPanel from "./admin-panel";
 import TrelloIntegrationPanel from "./trello-integration-panel";
 import DriveLibrary from "./drive-library";
+import { loadSession } from "./session-client";
 type SessionUser = {
   email: string;
   name: string;
@@ -695,6 +696,8 @@ function FeatureView({
 }
 
 export default function Home() {
+  const [sessionIssue,setSessionIssue]=useState("");
+  const [sessionAttempt,setSessionAttempt]=useState(0);
   const [session, setSession] = useState<SessionUser | null | undefined>(
     undefined,
   );
@@ -745,11 +748,10 @@ export default function Home() {
     useState<DriveStatus | null>(null);
   const [trelloIntegration,setTrelloIntegration]=useState<TrelloStatus|null>(null);
   useEffect(() => {
-    fetch("/api/session")
-      .then(async (r) => (r.ok ? (await r.json()).user : null))
-      .then(setSession)
-      .catch(() => setSession(null));
-  }, []);
+    const controller=new AbortController();setSessionIssue("");
+    loadSession<SessionUser>(controller.signal).then(user=>{if(!controller.signal.aborted)setSession(user)}).catch(error=>{if(!controller.signal.aborted)setSessionIssue(error instanceof Error?error.message:"Não foi possível verificar o acesso. Tente novamente.")});
+    return()=>controller.abort();
+  }, [sessionAttempt]);
   useEffect(() => {
     if (!session) return;
     let disposed = false;
@@ -1142,8 +1144,9 @@ export default function Home() {
   if (session === undefined)
     return (
       <main className="auth-loading">
-        <span>◉</span>
-        <strong>Verificando acesso…</strong>
+        <span aria-hidden="true">{sessionIssue?"!":"◉"}</span>
+        <strong role={sessionIssue?"alert":"status"}>{sessionIssue||"Verificando acesso…"}</strong>
+        {sessionIssue&&<><button className="primary-btn" onClick={()=>setSessionAttempt(value=>value+1)}>Tentar novamente</button><a href="/signin-with-chatgpt?return_to=%2F" target="_top">Entrar novamente com ChatGPT</a><small>Suas gravações e documentos não serão apagados.</small></>}
       </main>
     );
   if (!session)
